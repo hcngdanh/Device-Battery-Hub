@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.4.1</Version>
+    <AssemblyVersion>0.4.1.0</AssemblyVersion>
+    <FileVersion>0.4.1.0</FileVersion>
+    <InformationalVersion>0.4.1</InformationalVersion>
+    <Product>Battery Hub</Product>
+  </PropertyGroup>
+</Project>
