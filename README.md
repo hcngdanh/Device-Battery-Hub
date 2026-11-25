@@ -21,3 +21,7 @@ dotnet run --project tests\BatteryHub.Core.Tests
 # Run live (reads connected Windows Bluetooth devices)
 dotnet run --project src\BatteryHub.App
 ```
+
+## License
+
+[MIT](LICENSE)
