@@ -135,6 +135,30 @@
                             <c:SettingRow x:Name="ColorCodeRow" Icon="&#xE790;" Header="{l:Loc ColorCode}">
                                 <CheckBox x:Name="ColorCodeToggle" Style="{StaticResource ToggleSwitch}" Click="OnSimpleToggle"/>
                             </c:SettingRow>
+                            <StackPanel x:Name="LevelColorsPanel">
+                                <c:SettingRow x:Name="LevelHighRow" Style="{StaticResource SubRow}" Header="{l:Loc LevelHigh}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel x:Name="HighSwatches" Orientation="Horizontal" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="LevelHighCombo" Style="{StaticResource FluentComboBox}" MinWidth="86" Margin="12,0,0,0" SelectionChanged="OnComboChanged"/>
+                                    </StackPanel>
+                                </c:SettingRow>
+                                <c:SettingRow x:Name="LevelMidRow" Style="{StaticResource SubRow}" Header="{l:Loc LevelMid}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel x:Name="MidSwatches" Orientation="Horizontal" VerticalAlignment="Center"/>
+                                        <!-- keeps the swatches aligned with the rows that have a threshold box -->
+                                        <Border Width="86" Margin="12,0,0,0"/>
+                                    </StackPanel>
+                                </c:SettingRow>
+                                <c:SettingRow x:Name="LevelLowRow" Style="{StaticResource SubRow}" Header="{l:Loc LevelLow}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <StackPanel x:Name="LowSwatches" Orientation="Horizontal" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="LevelLowCombo" Style="{StaticResource FluentComboBox}" MinWidth="86" Margin="12,0,0,0" SelectionChanged="OnComboChanged"/>
+                                    </StackPanel>
+                                </c:SettingRow>
+                                <c:SettingRow Style="{StaticResource SubRow}">
+                                    <Button Style="{StaticResource StandardButton}" Content="{l:Loc LevelResetColors}" Click="OnResetLevelColorsClick"/>
+                                </c:SettingRow>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -333,7 +357,8 @@
                                 </Border>
                             </Grid>
                             <Grid Height="220">
-                                <Canvas x:Name="HistoryCanvas" ClipToBounds="True" Background="Transparent" SizeChanged="OnHistoryCanvasSizeChanged"/>
+                                <Canvas x:Name="HistoryCanvas" ClipToBounds="True" Background="Transparent" SizeChanged="OnHistoryCanvasSizeChanged"
+                                        MouseMove="OnHistoryMouseMove" MouseLeave="OnHistoryMouseLeave"/>
                                 <TextBlock x:Name="HistoryEmptyText" Text="{l:Loc HistoryEmpty}" Foreground="{DynamicResource SubTextBrush}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
                             </Grid>

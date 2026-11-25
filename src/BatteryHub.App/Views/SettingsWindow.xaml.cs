@@ -60,6 +60,7 @@ public partial class SettingsWindow : Window
         Closed += (_, _) => Loc.Instance.LanguageChanged -= OnLanguageSwitched;
 
         BuildLocalizedItems();
+        BuildLevelColorControls();
         Refresh();
         UpdateUpdateRow();
     }
@@ -97,29 +98,28 @@ public partial class SettingsWindow : Window
             LayoutBatteryRadio.IsChecked = s.TaskbarLayout == TaskbarLayout.Battery;
             LayoutBothRadio.IsChecked = s.TaskbarLayout == TaskbarLayout.BatteryAndPercentage;
             ColorCodeToggle.IsChecked = s.ColorCodeBatteryLevel;
-            ColorCodeRow.Description = Loc.T("ColorCodeDesc", s.LowBatteryThreshold);
-            UpdatePreviews(s);
+            LevelHighCombo.SelectedIndex = Array.IndexOf(AppSettings.LevelHighChoices, s.LevelHighThreshold);
+            LevelLowCombo.SelectedIndex = Array.IndexOf(AppSettings.LevelLowChoices, s.LevelLowThreshold);
+            SelectSwatch(HighSwatches, s.LevelHighColor);
+            SelectSwatch(MidSwatches, s.LevelMidColor);
+            SelectSwatch(LowSwatches, s.LevelLowColor);
 
             FocusToggle.IsChecked = s.RespectFocusAssist;
             SoundToggle.IsChecked = s.EnableSound;
             SoundCombo.SelectedIndex = (int)s.Sound;
-            SoundChoiceRow.IsEnabled = s.EnableSound;
 
             LowToggle.IsChecked = s.EnableLowBatteryNotification;
             LowSlider.Value = s.LowBatteryThreshold;
             LowValue.Text = $"{s.LowBatteryThreshold}%";
-            LowThresholdRow.IsEnabled = s.EnableLowBatteryNotification;
 
             CriticalToggle.IsChecked = s.EnableCriticalBatteryNotification;
             CriticalSlider.Value = s.CriticalBatteryThreshold;
             CriticalValue.Text = $"{s.CriticalBatteryThreshold}%";
             RepeatCombo.SelectedIndex = Array.IndexOf(AppSettings.CriticalRepeatChoices, s.CriticalRepeatMinutes);
-            CriticalThresholdRow.IsEnabled = CriticalRepeatRow.IsEnabled = s.EnableCriticalBatteryNotification;
 
             FullToggle.IsChecked = s.EnableFullBatteryNotification;
             int target = s.FullChargeMode == FullChargeMode.Full ? 100 : s.FullChargeThreshold;
             FullTargetCombo.SelectedIndex = Math.Max(0, Array.IndexOf(FullTargets, FullTargets.OrderBy(t => Math.Abs(t - target)).First()));
-            FullTargetRow.IsEnabled = s.EnableFullBatteryNotification;
 
             ChargerToggle.IsChecked = s.EnableChargingStateNotification;
             ConnectionToggle.IsChecked = s.EnableConnectionNotification;
@@ -129,7 +129,6 @@ public partial class SettingsWindow : Window
             ReminderMinuteCombo.SelectedIndex = Math.Max(0, Array.IndexOf(ReminderMinutes, ReminderMinutes.OrderBy(m => Math.Abs(m - s.ChargeReminderTime.Minutes)).First()));
             ReminderSlider.Value = s.ChargeReminderThreshold;
             ReminderValue.Text = $"{s.ChargeReminderThreshold}%";
-            ReminderTimeRow.IsEnabled = ReminderThresholdRow.IsEnabled = s.EnableChargeReminder;
 
             GameAutoToggle.IsChecked = s.GameModeAutoEnable;
             GameNotifCompact.IsChecked = s.GameModeNotifications == GameModeNotificationStyle.Compact;
@@ -143,21 +142,103 @@ public partial class SettingsWindow : Window
             CornerBR.IsChecked = s.GameOverlayCorner == OverlayCorner.BottomRight;
             OpacitySlider.Value = Math.Round(s.GameOverlayOpacity * 100);
             OpacityValue.Text = $"{Math.Round(s.GameOverlayOpacity * 100)}%";
-            HotkeyRow.IsEnabled = CornerRow.IsEnabled = OpacityRow.IsEnabled = OverlayDevicesRow.IsEnabled = s.GameOverlayEnabled;
             BuildOverlayDeviceList(s);
 
             HistoryToggle.IsChecked = s.HistoryEnabled;
             Keep7.IsChecked = s.HistoryRetentionDays == 7;
             Keep30.IsChecked = s.HistoryRetentionDays == 30;
             Keep90.IsChecked = s.HistoryRetentionDays == 90;
-            RetentionRow.IsEnabled = s.HistoryEnabled;
 
             AutoUpdateToggle.IsChecked = s.AutoCheckUpdates;
+            UpdateDependentState(s);
         }
         finally
         {
             _suppress = false;
         }
+    }
+
+    /// <summary>Applies a change and refreshes what depends on it (enabled sub-rows, previews, descriptions).</summary>
+    private void Change(Action<AppSettings> mutate)
+    {
+        _host.Update(mutate);
+        UpdateDependentState(_host.Settings);
+    }
+
+    private void UpdateDependentState(AppSettings s)
+    {
+        // Level colours only affect the battery glyph, so they are pointless in percentage-only mode.
+        bool hasGlyph = s.TaskbarLayout != TaskbarLayout.Percentage;
+        ColorCodeRow.IsEnabled = hasGlyph;
+        ColorCodeRow.Description = hasGlyph
+            ? Loc.T("ColorCodeDesc", s.LevelHighThreshold, s.LevelLowThreshold)
+            : Loc.T("ColorCodeNeedsGlyph");
+        LevelColorsPanel.Visibility = hasGlyph && s.ColorCodeBatteryLevel ? Visibility.Visible : Visibility.Collapsed;
+        LevelHighRow.Description = Loc.T("LevelHighDesc", s.LevelHighThreshold);
+        LevelMidRow.Description = Loc.T("LevelMidDesc", s.LevelLowThreshold, s.LevelHighThreshold);
+        LevelLowRow.Description = Loc.T("LevelLowDesc", s.LevelLowThreshold);
+        UpdatePreviews(s);
+
+        SoundChoiceRow.IsEnabled = s.EnableSound;
+        LowThresholdRow.IsEnabled = s.EnableLowBatteryNotification;
+        CriticalThresholdRow.IsEnabled = CriticalRepeatRow.IsEnabled = s.EnableCriticalBatteryNotification;
+        FullTargetRow.IsEnabled = s.EnableFullBatteryNotification;
+        ReminderTimeRow.IsEnabled = ReminderThresholdRow.IsEnabled = s.EnableChargeReminder;
+        HotkeyRow.IsEnabled = CornerRow.IsEnabled = OpacityRow.IsEnabled = OverlayDevicesRow.IsEnabled = s.GameOverlayEnabled;
+        RetentionRow.IsEnabled = s.HistoryEnabled;
+    }
+
+    // ---------------------------------------------------------------- level colours
+
+    private void BuildLevelColorControls()
+    {
+        foreach (int v in AppSettings.LevelHighChoices)
+            LevelHighCombo.Items.Add(new ComboBoxItem { Content = $"> {v}%" });
+        foreach (int v in AppSettings.LevelLowChoices)
+            LevelLowCombo.Items.Add(new ComboBoxItem { Content = $"< {v}%" });
+
+        AddSwatches(HighSwatches, "LevelHigh", (s, c) => s.LevelHighColor = c);
+        AddSwatches(MidSwatches, "LevelMid", (s, c) => s.LevelMidColor = c);
+        AddSwatches(LowSwatches, "LevelLow", (s, c) => s.LevelLowColor = c);
+    }
+
+    private void AddSwatches(System.Windows.Controls.Panel host, string group, Action<AppSettings, string> apply)
+    {
+        foreach (string hex in AppSettings.LevelColorChoices)
+        {
+            var swatch = new System.Windows.Controls.RadioButton
+            {
+                GroupName = group,
+                Tag = hex,
+                Background = new SolidColorBrush(DeviceDisplayItem.ParseColor(hex)),
+                Style = (Style)FindResource("ColorSwatch")
+            };
+            swatch.Checked += (_, _) =>
+            {
+                if (_suppress || !IsLoaded) return;
+                Change(s => apply(s, hex));
+            };
+            host.Children.Add(swatch);
+        }
+    }
+
+    private static void SelectSwatch(System.Windows.Controls.Panel host, string hex)
+    {
+        foreach (var swatch in host.Children.OfType<System.Windows.Controls.RadioButton>())
+            swatch.IsChecked = string.Equals(swatch.Tag as string, hex, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OnResetLevelColorsClick(object sender, RoutedEventArgs e)
+    {
+        Change(s =>
+        {
+            s.LevelHighThreshold = 50;
+            s.LevelLowThreshold = 20;
+            s.LevelHighColor = AppSettings.DefaultHighColor;
+            s.LevelMidColor = AppSettings.DefaultMidColor;
+            s.LevelLowColor = AppSettings.DefaultLowColor;
+        });
+        Refresh();
     }
 
     // ---------------------------------------------------------------- navigation
@@ -187,14 +268,14 @@ public partial class SettingsWindow : Window
     {
         if (_suppress) return;
         var lang = LanguageCombo.SelectedIndex == 1 ? AppLanguage.Vietnamese : AppLanguage.English;
-        _host.Update(s => s.Language = lang);
+        Change(s => s.Language = lang);
     }
 
     private void OnThemeChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppress) return;
         var theme = (AppTheme)Math.Max(0, ThemeCombo.SelectedIndex);
-        _host.Update(s => s.Theme = theme);
+        Change(s => s.Theme = theme);
     }
 
     private void OnStartupClick(object sender, RoutedEventArgs e)
@@ -275,7 +356,7 @@ public partial class SettingsWindow : Window
             _ => null
         };
         if (mutate is not null)
-            _host.Update(mutate);
+            Change(mutate);
     }
 
     private void OnSliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -283,25 +364,35 @@ public partial class SettingsWindow : Window
         if (_suppress || !IsLoaded) return;
         int v = (int)Math.Round(e.NewValue);
 
-        if (sender == LowSlider) { LowValue.Text = $"{v}%"; _host.Update(s => s.LowBatteryThreshold = v); }
-        else if (sender == CriticalSlider) { CriticalValue.Text = $"{v}%"; _host.Update(s => s.CriticalBatteryThreshold = v); }
-        else if (sender == ReminderSlider) { ReminderValue.Text = $"{v}%"; _host.Update(s => s.ChargeReminderThreshold = v); }
-        else if (sender == OpacitySlider) { OpacityValue.Text = $"{v}%"; _host.Update(s => s.GameOverlayOpacity = v / 100.0); }
+        if (sender == LowSlider) { LowValue.Text = $"{v}%"; Change(s => s.LowBatteryThreshold = v); }
+        else if (sender == CriticalSlider) { CriticalValue.Text = $"{v}%"; Change(s => s.CriticalBatteryThreshold = v); }
+        else if (sender == ReminderSlider) { ReminderValue.Text = $"{v}%"; Change(s => s.ChargeReminderThreshold = v); }
+        else if (sender == OpacitySlider) { OpacityValue.Text = $"{v}%"; Change(s => s.GameOverlayOpacity = v / 100.0); }
     }
 
     private void OnComboChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppress || !IsLoaded) return;
 
-        if (sender == RepeatCombo && RepeatCombo.SelectedIndex >= 0)
+        if (sender == LevelHighCombo && LevelHighCombo.SelectedIndex >= 0)
+        {
+            int v = AppSettings.LevelHighChoices[LevelHighCombo.SelectedIndex];
+            Change(s => s.LevelHighThreshold = v);
+        }
+        else if (sender == LevelLowCombo && LevelLowCombo.SelectedIndex >= 0)
+        {
+            int v = AppSettings.LevelLowChoices[LevelLowCombo.SelectedIndex];
+            Change(s => s.LevelLowThreshold = v);
+        }
+        else if (sender == RepeatCombo && RepeatCombo.SelectedIndex >= 0)
         {
             int minutes = AppSettings.CriticalRepeatChoices[RepeatCombo.SelectedIndex];
-            _host.Update(s => s.CriticalRepeatMinutes = minutes);
+            Change(s => s.CriticalRepeatMinutes = minutes);
         }
         else if (sender == FullTargetCombo && FullTargetCombo.SelectedIndex >= 0)
         {
             int target = FullTargets[FullTargetCombo.SelectedIndex];
-            _host.Update(s =>
+            Change(s =>
             {
                 s.FullChargeMode = target >= 100 ? FullChargeMode.Full : FullChargeMode.Threshold;
                 if (target < 100)
@@ -312,7 +403,7 @@ public partial class SettingsWindow : Window
                  ReminderHourCombo.SelectedIndex >= 0 && ReminderMinuteCombo.SelectedIndex >= 0)
         {
             var time = new TimeSpan(ReminderHourCombo.SelectedIndex, ReminderMinutes[ReminderMinuteCombo.SelectedIndex], 0);
-            _host.Update(s => s.ChargeReminderTime = time);
+            Change(s => s.ChargeReminderTime = time);
         }
     }
 
@@ -320,17 +411,17 @@ public partial class SettingsWindow : Window
     {
         if (_suppress || !IsLoaded) return;
 
-        if (sender == GameNotifCompact) _host.Update(s => s.GameModeNotifications = GameModeNotificationStyle.Compact);
-        else if (sender == GameNotifOff) _host.Update(s => s.GameModeNotifications = GameModeNotificationStyle.Off);
-        else if (sender == CornerTL) _host.Update(s => s.GameOverlayCorner = OverlayCorner.TopLeft);
-        else if (sender == CornerTR) _host.Update(s => s.GameOverlayCorner = OverlayCorner.TopRight);
-        else if (sender == CornerBL) _host.Update(s => s.GameOverlayCorner = OverlayCorner.BottomLeft);
-        else if (sender == CornerBR) _host.Update(s => s.GameOverlayCorner = OverlayCorner.BottomRight);
-        else if (sender == PositionLeft) _host.Update(s => s.TaskbarPosition = TaskbarPosition.Left);
-        else if (sender == PositionTray) _host.Update(s => s.TaskbarPosition = TaskbarPosition.NearTray);
-        else if (sender == Keep7) _host.Update(s => s.HistoryRetentionDays = 7);
-        else if (sender == Keep30) _host.Update(s => s.HistoryRetentionDays = 30);
-        else if (sender == Keep90) _host.Update(s => s.HistoryRetentionDays = 90);
+        if (sender == GameNotifCompact) Change(s => s.GameModeNotifications = GameModeNotificationStyle.Compact);
+        else if (sender == GameNotifOff) Change(s => s.GameModeNotifications = GameModeNotificationStyle.Off);
+        else if (sender == CornerTL) Change(s => s.GameOverlayCorner = OverlayCorner.TopLeft);
+        else if (sender == CornerTR) Change(s => s.GameOverlayCorner = OverlayCorner.TopRight);
+        else if (sender == CornerBL) Change(s => s.GameOverlayCorner = OverlayCorner.BottomLeft);
+        else if (sender == CornerBR) Change(s => s.GameOverlayCorner = OverlayCorner.BottomRight);
+        else if (sender == PositionLeft) Change(s => s.TaskbarPosition = TaskbarPosition.Left);
+        else if (sender == PositionTray) Change(s => s.TaskbarPosition = TaskbarPosition.NearTray);
+        else if (sender == Keep7) Change(s => s.HistoryRetentionDays = 7);
+        else if (sender == Keep30) Change(s => s.HistoryRetentionDays = 30);
+        else if (sender == Keep90) Change(s => s.HistoryRetentionDays = 90);
     }
 
     // ---------------------------------------------------------------- taskbar previews
@@ -354,7 +445,7 @@ public partial class SettingsWindow : Window
         var layout = sender == LayoutBatteryRadio ? TaskbarLayout.Battery
                    : sender == LayoutBothRadio ? TaskbarLayout.BatteryAndPercentage
                    : TaskbarLayout.Percentage;
-        _host.Update(s => s.TaskbarLayout = layout);
+        Change(s => s.TaskbarLayout = layout);
     }
 
     // ---------------------------------------------------------------- sound
@@ -363,7 +454,7 @@ public partial class SettingsWindow : Window
     {
         if (_suppress || !IsLoaded || SoundCombo.SelectedIndex < 0) return;
         var sound = (NotificationSound)SoundCombo.SelectedIndex;
-        _host.Update(s => s.Sound = sound);
+        Change(s => s.Sound = sound);
         NotificationPresenter.PlaySound(sound);
     }
 
@@ -395,7 +486,7 @@ public partial class SettingsWindow : Window
         if (key is Key.Back or Key.Delete)
         {
             _host.ApplyHotkey(string.Empty);
-            _host.Update(s => s.GameOverlayHotkey = string.Empty);
+            Change(s => s.GameOverlayHotkey = string.Empty);
             EndHotkeyCapture();
             return;
         }
@@ -409,7 +500,7 @@ public partial class SettingsWindow : Window
         string hotkey = HotkeyService.Format(modifiers, key);
         if (_host.ApplyHotkey(hotkey))
         {
-            _host.Update(s => s.GameOverlayHotkey = hotkey);
+            Change(s => s.GameOverlayHotkey = hotkey);
             HotkeyRow.Description = Loc.T("HotkeyDesc");
         }
         else
@@ -455,7 +546,7 @@ public partial class SettingsWindow : Window
             box.Click += (_, _) =>
             {
                 bool on = box.IsChecked == true;
-                _host.Update(x =>
+                Change(x =>
                 {
                     if (on) x.GameOverlayDeviceIds.Add(id);
                     else x.GameOverlayDeviceIds.Remove(id);
@@ -494,6 +585,8 @@ public partial class SettingsWindow : Window
     private void DrawHistory()
     {
         HistoryCanvas.Children.Clear();
+        _chartPoints = [];
+        _hoverLine = null; _hoverDot = null; _hoverLabel = null; _hoverText = null;
         double w = HistoryCanvas.ActualWidth, h = HistoryCanvas.ActualHeight;
         if (w <= 0 || h <= 0)
             return;
@@ -557,6 +650,84 @@ public partial class SettingsWindow : Window
         area.Points.Add(new System.Windows.Point(line.Points[^1].X, 6 + plotH));
         HistoryCanvas.Children.Add(area);
         HistoryCanvas.Children.Add(line);
+
+        // Hover readout: crosshair + dot + label, positioned in OnHistoryMouseMove.
+        _chartPoints = samples.Select(s => (Map(s), s)).ToList();
+        _chartTimeFormat = range.TotalDays > 1.5 ? "dd/MM HH:mm" : "HH:mm";
+        _chartPlotTop = 6;
+        _chartPlotBottom = 6 + plotH;
+
+        _hoverLine = new Line { Stroke = sub, StrokeThickness = 1, StrokeDashArray = [3, 3], Visibility = Visibility.Collapsed, IsHitTestVisible = false };
+        _hoverDot = new Ellipse
+        {
+            Width = 9, Height = 9, Fill = accent, StrokeThickness = 2,
+            Stroke = (System.Windows.Media.Brush)FindResource("CardBrush"),
+            Visibility = Visibility.Collapsed, IsHitTestVisible = false
+        };
+        _hoverText = new TextBlock { FontSize = 11.5, Foreground = (System.Windows.Media.Brush)FindResource("TextBrush") };
+        _hoverLabel = new Border
+        {
+            Child = _hoverText,
+            Padding = new Thickness(8, 4, 8, 5),
+            CornerRadius = new CornerRadius(5),
+            BorderThickness = new Thickness(1),
+            Background = (System.Windows.Media.Brush)FindResource("PopupBrush"),
+            BorderBrush = (System.Windows.Media.Brush)FindResource("StrokeBrush"),
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false
+        };
+        HistoryCanvas.Children.Add(_hoverLine);
+        HistoryCanvas.Children.Add(_hoverDot);
+        HistoryCanvas.Children.Add(_hoverLabel);
+    }
+
+    private List<(System.Windows.Point Pos, BatterySample Sample)> _chartPoints = [];
+    private string _chartTimeFormat = "HH:mm";
+    private double _chartPlotTop, _chartPlotBottom;
+    private Line? _hoverLine;
+    private Ellipse? _hoverDot;
+    private Border? _hoverLabel;
+    private TextBlock? _hoverText;
+
+    private void OnHistoryMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_chartPoints.Count == 0 || _hoverLine is null || _hoverDot is null || _hoverLabel is null || _hoverText is null)
+            return;
+
+        double mouseX = e.GetPosition(HistoryCanvas).X;
+        var (pos, sample) = _chartPoints.MinBy(p => Math.Abs(p.Pos.X - mouseX));
+
+        _hoverLine.X1 = _hoverLine.X2 = pos.X;
+        _hoverLine.Y1 = _chartPlotTop;
+        _hoverLine.Y2 = _chartPlotBottom;
+        Canvas.SetLeft(_hoverDot, pos.X - _hoverDot.Width / 2);
+        Canvas.SetTop(_hoverDot, pos.Y - _hoverDot.Height / 2);
+
+        string state = sample.IsCharging ? $" · {Loc.T("StatusCharging")}" : "";
+        _hoverText.Inlines.Clear();
+        _hoverText.Inlines.Add(new System.Windows.Documents.Run($"{sample.Percent}%") { FontWeight = FontWeights.SemiBold });
+        _hoverText.Inlines.Add(new System.Windows.Documents.Run(
+            $"  {sample.Timestamp.ToLocalTime().ToString(_chartTimeFormat, Loc.Instance.Culture)}{state}")
+        {
+            Foreground = (System.Windows.Media.Brush)FindResource("SubTextBrush")
+        });
+
+        _hoverLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        double lw = _hoverLabel.DesiredSize.Width, lh = _hoverLabel.DesiredSize.Height;
+        // Prefer right of the point; flip left near the right edge. Keep above the dot, below the top edge.
+        double lx = pos.X + 10 + lw > HistoryCanvas.ActualWidth ? pos.X - 10 - lw : pos.X + 10;
+        double ly = Math.Clamp(pos.Y - lh - 8, 0, Math.Max(0, HistoryCanvas.ActualHeight - lh));
+        Canvas.SetLeft(_hoverLabel, Math.Max(0, lx));
+        Canvas.SetTop(_hoverLabel, ly);
+
+        _hoverLine.Visibility = _hoverDot.Visibility = _hoverLabel.Visibility = Visibility.Visible;
+    }
+
+    private void OnHistoryMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_hoverLine is null || _hoverDot is null || _hoverLabel is null)
+            return;
+        _hoverLine.Visibility = _hoverDot.Visibility = _hoverLabel.Visibility = Visibility.Collapsed;
     }
 
     private void OnClearHistoryClick(object sender, RoutedEventArgs e)

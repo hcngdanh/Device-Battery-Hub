@@ -68,6 +68,13 @@ public sealed class AppSettings
 {
     public static readonly int[] CriticalRepeatChoices = [5, 10, 15, 30, 60];
     public static readonly int[] HistoryRetentionChoices = [7, 30, 90];
+    public static readonly int[] LevelHighChoices = [40, 50, 60, 70, 80];
+    public static readonly int[] LevelLowChoices = [10, 15, 20, 25, 30];
+    public static readonly string[] LevelColorChoices =
+        ["#52C47D", "#2EC4B6", "#4CA3FF", "#A78BFA", "#FF6FAE", "#F2B441", "#FF8C42", "#FF5A50", "#9E9E9E"];
+    public const string DefaultHighColor = "#52C47D";
+    public const string DefaultMidColor = "#F2B441";
+    public const string DefaultLowColor = "#FF5A50";
 
     // ---- General ----
     public AppLanguage Language { get; set; } = AppLanguage.English;
@@ -79,7 +86,15 @@ public sealed class AppSettings
     public bool ShowTaskbarOverlay { get; set; } = true;
     public TaskbarLayout TaskbarLayout { get; set; } = TaskbarLayout.Percentage;
     public TaskbarPosition TaskbarPosition { get; set; } = TaskbarPosition.NearTray;
+    /// <summary>Colours the battery glyph fill by level (the percentage text stays neutral).</summary>
     public bool ColorCodeBatteryLevel { get; set; } = true;
+    /// <summary>Above this % the fill uses <see cref="LevelHighColor"/>.</summary>
+    public int LevelHighThreshold { get; set; } = 50;
+    /// <summary>Below this % the fill uses <see cref="LevelLowColor"/>.</summary>
+    public int LevelLowThreshold { get; set; } = 20;
+    public string LevelHighColor { get; set; } = DefaultHighColor;
+    public string LevelMidColor { get; set; } = DefaultMidColor;
+    public string LevelLowColor { get; set; } = DefaultLowColor;
     public bool ShowOnlyConnected { get; set; } = true;
     public int MaxTaskbarDevices { get; set; } = 4;
 

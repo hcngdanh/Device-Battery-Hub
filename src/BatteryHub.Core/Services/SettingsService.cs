@@ -124,6 +124,11 @@ public sealed class SettingsService
         s.GameOverlayOpacity = Math.Clamp(s.GameOverlayOpacity, 0.3, 1.0);
         s.GameOverlayHotkey ??= string.Empty;
         s.HistoryRetentionDays = Snap(s.HistoryRetentionDays, AppSettings.HistoryRetentionChoices);
+        s.LevelHighThreshold = Snap(s.LevelHighThreshold, AppSettings.LevelHighChoices);
+        s.LevelLowThreshold = Snap(s.LevelLowThreshold, AppSettings.LevelLowChoices);
+        s.LevelHighColor = NormalizeColor(s.LevelHighColor, AppSettings.DefaultHighColor);
+        s.LevelMidColor = NormalizeColor(s.LevelMidColor, AppSettings.DefaultMidColor);
+        s.LevelLowColor = NormalizeColor(s.LevelLowColor, AppSettings.DefaultLowColor);
 
         // Deserialized collections use the default (case-sensitive) comparer; device ids are case-insensitive.
         s.DeviceAliases = new(s.DeviceAliases ?? new(), StringComparer.OrdinalIgnoreCase);
@@ -134,4 +139,10 @@ public sealed class SettingsService
 
     private static int Snap(int value, int[] choices) =>
         choices.OrderBy(c => Math.Abs(c - value)).First();
+
+    /// <summary>Accepts <c>#RRGGBB</c> (any case); anything else falls back to the default.</summary>
+    private static string NormalizeColor(string? value, string fallback) =>
+        value is { Length: 7 } && value[0] == '#' && value.Skip(1).All(Uri.IsHexDigit)
+            ? value.ToUpperInvariant()
+            : fallback;
 }

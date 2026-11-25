@@ -74,43 +74,22 @@ public sealed class DeviceDisplayItem
         AppSettings settings,
         TaskbarLayout layout)
     {
-        bool isLow = model.BatteryPercent <= settings.LowBatteryThreshold;
-
         System.Windows.Media.Color normalColor = isLightTaskbar
             ? System.Windows.Media.Color.FromRgb(26, 26, 26)
             : System.Windows.Media.Color.FromRgb(236, 236, 236);
 
-        // Traffic-light level colors: Green > 50%, Yellow threshold–50%, Red < threshold
-        System.Windows.Media.Color greenColor = isLightTaskbar
+        // Windows' own charging green, independent of the user's level colours.
+        System.Windows.Media.Color chargingGreen = isLightTaskbar
             ? System.Windows.Media.Color.FromRgb(22, 138, 70)
             : System.Windows.Media.Color.FromRgb(82, 196, 125);
 
-        System.Windows.Media.Color yellowColor = isLightTaskbar
-            ? System.Windows.Media.Color.FromRgb(180, 110, 10)
-            : System.Windows.Media.Color.FromRgb(242, 180, 65);
-
-        System.Windows.Media.Color redColor = isLightTaskbar
-            ? System.Windows.Media.Color.FromRgb(210, 45, 30)
-            : System.Windows.Media.Color.FromRgb(255, 90, 80);
-
-        System.Windows.Media.Color chosenColor;
-        if (settings.ColorCodeBatteryLevel)
-        {
-            if (model.BatteryPercent > 50)
-                chosenColor = greenColor;
-            else if (model.BatteryPercent >= settings.LowBatteryThreshold)
-                chosenColor = yellowColor;
-            else
-                chosenColor = redColor;
-        }
-        else
-        {
-            chosenColor = isLow ? redColor : normalColor;
-        }
+        // Level colour (user-defined thresholds and colours) only tints the battery glyph fill
+        // and the flyout bar; the device icon and percentage text always stay neutral.
+        var levelColor = settings.ColorCodeBatteryLevel ? LevelColor(model.BatteryPercent, settings) : normalColor;
 
         // Windows-style: the battery fills green while charging, with a white bolt on top.
         // In light mode the white bolt gets a dark outline so it stays visible over the empty part.
-        var fillColor = model.IsCharging ? greenColor : chosenColor;
+        var fillColor = model.IsCharging ? chargingGreen : levelColor;
         var boltStroke = isLightTaskbar
             ? System.Windows.Media.Color.FromRgb(26, 26, 26)
             : System.Windows.Media.Color.FromRgb(28, 28, 28);
@@ -127,8 +106,8 @@ public sealed class DeviceDisplayItem
             IsHidden = model.IsHidden,
             Source = model.Source,
             IconGeometry = DeviceIconPaths.GetGeometry(model.Category),
-            ForegroundBrush = Frozen(chosenColor),
-            AccentBrush = Frozen(chosenColor),
+            ForegroundBrush = Frozen(normalColor),
+            AccentBrush = Frozen(levelColor),
             ChargingBrush = Frozen(normalColor),
             BatteryFillBrush = Frozen(fillColor),
             BoltBrush = Frozen(Colors.White),
@@ -136,6 +115,24 @@ public sealed class DeviceDisplayItem
             BatteryIconVisibility = layout != TaskbarLayout.Percentage ? Visibility.Visible : Visibility.Collapsed,
             PercentageVisibility = layout != TaskbarLayout.Battery ? Visibility.Visible : Visibility.Collapsed
         };
+    }
+
+    /// <summary>High above <c>LevelHighThreshold</c>, low below <c>LevelLowThreshold</c>, mid in between.</summary>
+    public static System.Windows.Media.Color LevelColor(int percent, AppSettings settings) =>
+        ParseColor(percent > settings.LevelHighThreshold ? settings.LevelHighColor
+                 : percent < settings.LevelLowThreshold ? settings.LevelLowColor
+                 : settings.LevelMidColor);
+
+    public static System.Windows.Media.Color ParseColor(string hex)
+    {
+        try
+        {
+            return (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+        }
+        catch (FormatException)
+        {
+            return Colors.Gray;
+        }
     }
 
     private static SolidColorBrush Frozen(System.Windows.Media.Color color)
