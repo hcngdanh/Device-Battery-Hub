@@ -3,14 +3,6 @@ using BatteryHub.Core.Services.Providers;
 
 namespace BatteryHub.Core.Services;
 
-public enum NotificationEventType
-{
-    LowBattery,
-    FullBattery,
-    ChargingStarted,
-    ChargingStopped
-}
-
 public sealed class BatteryMonitorService : IDisposable
 {
     /// <summary>
@@ -24,9 +16,8 @@ public sealed class BatteryMonitorService : IDisposable
     private readonly SettingsService _settingsService;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
-    private readonly HashSet<string> _notifiedLowIds = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _notifiedFullIds = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, bool> _previousChargingState = new(StringComparer.OrdinalIgnoreCase);
+    private readonly NotificationEngine _notifications = new();
+    private readonly TimeProvider _time;
 
     // Guards _settingsSnapshot / _latestRaw / _latestDevices, which are shared between the
     // refresh thread (timer / thread pool) and the UI thread (UpdateSettings).
@@ -56,24 +47,31 @@ public sealed class BatteryMonitorService : IDisposable
     /// May be raised on a background thread.
     /// </summary>
     public event Action<IReadOnlyList<BluetoothDeviceBattery>>? DevicesUpdated;
-    public event Action<BluetoothDeviceBattery, NotificationEventType, string>? NotificationTriggered;
+    public event Action<BatteryNotification>? NotificationTriggered;
+
+    /// <summary>When set, scans are logged while <see cref="AppSettings.HistoryEnabled"/> is on.</summary>
+    public BatteryHistoryService? History { get; init; }
 
     public BatteryMonitorService(
         SettingsService settingsService,
-        IBatteryProvider? liveProvider = null)
+        IBatteryProvider? liveProvider = null,
+        TimeProvider? timeProvider = null)
         : this(
             settingsService,
             liveProvider is not null
                 ? [liveProvider]
-                : CreateDefaultLiveProviders())
+                : CreateDefaultLiveProviders(),
+            timeProvider)
     {
     }
 
     public BatteryMonitorService(
         SettingsService settingsService,
-        IEnumerable<IBatteryProvider> liveProviders)
+        IEnumerable<IBatteryProvider> liveProviders,
+        TimeProvider? timeProvider = null)
     {
         _settingsService = settingsService;
+        _time = timeProvider ?? TimeProvider.System;
         _liveProviders = liveProviders.ToList();
         Settings = _settingsService.Load();
         _settingsSnapshot = Settings.Clone();
@@ -143,7 +141,16 @@ public sealed class BatteryMonitorService : IDisposable
                 _hasPublished = true;
             }
 
-            CheckNotifications(processed, settings);
+            var now = _time.GetLocalNow();
+            foreach (var notification in _notifications.Evaluate(processed, settings, now))
+                NotificationTriggered?.Invoke(notification);
+
+            if (settings.HistoryEnabled && History is not null)
+            {
+                try { History.Record(processed, now, settings.HistoryRetentionDays); }
+                catch { /* disk full / locked: history is best-effort */ }
+            }
+
             if (changed)
                 DevicesUpdated?.Invoke(processed);
             return processed;
@@ -206,70 +213,6 @@ public sealed class BatteryMonitorService : IDisposable
             .Where(d => !d.IsHidden && (!Settings.ShowOnlyConnected || d.IsConnected))
             .Take(Settings.MaxTaskbarDevices)
             .ToList();
-    }
-
-    private void CheckNotifications(IReadOnlyList<BluetoothDeviceBattery> devices, AppSettings settings)
-    {
-        foreach (var d in devices)
-        {
-            if (!d.IsConnected || d.IsHidden)
-                continue;
-
-            // 1. Charging state transitions (plugged in / unplugged)
-            if (_previousChargingState.TryGetValue(d.Id, out bool prevCharging))
-            {
-                if (prevCharging != d.IsCharging)
-                {
-                    _previousChargingState[d.Id] = d.IsCharging;
-                    if (settings.EnableChargingStateNotification)
-                    {
-                        var eventType = d.IsCharging ? NotificationEventType.ChargingStarted : NotificationEventType.ChargingStopped;
-                        var msg = d.IsCharging
-                            ? $"{d.EffectiveName} is now charging ({d.BatteryPercent}%)."
-                            : $"{d.EffectiveName} unplugged from charger ({d.BatteryPercent}%).";
-                        NotificationTriggered?.Invoke(d, eventType, msg);
-                    }
-                }
-            }
-            else
-            {
-                _previousChargingState[d.Id] = d.IsCharging;
-            }
-
-            // 2. Low Battery check
-            if (settings.EnableLowBatteryNotification)
-            {
-                if (d.BatteryPercent <= settings.LowBatteryThreshold && !d.IsCharging)
-                {
-                    if (_notifiedLowIds.Add(d.Id))
-                    {
-                        var msg = $"{d.EffectiveName} battery is low ({d.BatteryPercent}%). Please charge soon.";
-                        NotificationTriggered?.Invoke(d, NotificationEventType.LowBattery, msg);
-                    }
-                }
-                else if (d.BatteryPercent > settings.LowBatteryThreshold + 5)
-                {
-                    _notifiedLowIds.Remove(d.Id);
-                }
-            }
-
-            // 3. Fully Charged check (100% or high while charging/completed)
-            if (settings.EnableFullBatteryNotification)
-            {
-                if (d.BatteryPercent >= 100)
-                {
-                    if (_notifiedFullIds.Add(d.Id))
-                    {
-                        var msg = $"{d.EffectiveName} is fully charged (100%).";
-                        NotificationTriggered?.Invoke(d, NotificationEventType.FullBattery, msg);
-                    }
-                }
-                else if (d.BatteryPercent <= 95)
-                {
-                    _notifiedFullIds.Remove(d.Id);
-                }
-            }
-        }
     }
 
     public void Dispose()

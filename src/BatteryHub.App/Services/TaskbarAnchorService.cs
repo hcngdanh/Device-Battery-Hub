@@ -3,6 +3,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using BatteryHub.App.Interop;
+using BatteryHub.Core.Models;
 
 namespace BatteryHub.App.Services;
 
@@ -20,6 +21,9 @@ public sealed class TaskbarAnchorService : IDisposable
     private bool _enabled = true;
     private bool _hasContent = true;
     private TaskbarNative.RECT _lastPlacedRect;
+    private TaskbarPosition _position = TaskbarPosition.NearTray;
+    private bool _leftAligned;
+    private long _alignmentCheckedAt = long.MinValue / 2;
 
     public TaskbarAnchorService(Window overlay)
     {
@@ -74,6 +78,38 @@ public sealed class TaskbarAnchorService : IDisposable
         Reposition();
     }
 
+    public void SetPosition(TaskbarPosition position)
+    {
+        if (_position == position)
+            return;
+        _position = position;
+        Reposition(force: true);
+    }
+
+    /// <summary>
+    /// True when Windows 11 taskbar icons are left-aligned (TaskbarAl = 0). Cached for a few
+    /// seconds because Reposition runs on a 200 ms timer.
+    /// </summary>
+    private bool IsTaskbarLeftAligned()
+    {
+        long now = Environment.TickCount64;
+        if (now - _alignmentCheckedAt < 3000)
+            return _leftAligned;
+
+        _alignmentCheckedAt = now;
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
+            _leftAligned = key?.GetValue("TaskbarAl") is int al && al == 0;
+        }
+        catch
+        {
+            _leftAligned = false;
+        }
+        return _leftAligned;
+    }
+
     public void ApplyExtendedStyles()
     {
         var hwnd = new WindowInteropHelper(_overlay).Handle;
@@ -124,8 +160,19 @@ public sealed class TaskbarAnchorService : IDisposable
         // Windows 11 taskbar includes a 1px top border, so tray icons sit ~1 DIP lower than geometric center.
         int opticalOffsetPx = (int)Math.Round(1.5 * scaleY);
 
-        int rightPx = notifyRect.Left - gapPx;
-        int leftPx = Math.Max(taskbarRect.Left + 8, rightPx - widthPx);
+        int leftPx;
+        if (_position == TaskbarPosition.Left && !IsTaskbarLeftAligned())
+        {
+            // Far-left edge (empty when taskbar icons are centred). With a left-aligned taskbar
+            // the Start button lives there, so we fall back to the tray anchor instead.
+            int marginPx = (int)Math.Round(12 * scaleX);
+            leftPx = taskbarRect.Left + marginPx;
+        }
+        else
+        {
+            int rightPx = notifyRect.Left - gapPx;
+            leftPx = Math.Max(taskbarRect.Left + 8, rightPx - widthPx);
+        }
         int topPx = notifyRect.Top + (notifyRect.Height - heightPx) / 2 + opticalOffsetPx;
 
         overlayRect = new TaskbarNative.RECT

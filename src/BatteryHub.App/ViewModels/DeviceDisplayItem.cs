@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using BatteryHub.App.Controls;
+using BatteryHub.App.Localization;
 using BatteryHub.Core.Models;
 
 namespace BatteryHub.App.ViewModels;
@@ -45,22 +46,20 @@ public sealed class DeviceDisplayItem
     public System.Windows.Media.Brush BoltStrokeBrush { get; init; } = System.Windows.Media.Brushes.Black;
 
     public string PercentText => $"{BatteryPercent}%";
-    public string TooltipText => IsCharging
-        ? $"{EffectiveName} — {BatteryPercent}% (Charging)"
-        : $"{EffectiveName} — {BatteryPercent}% ({(IsConnected ? "Connected" : "Disconnected")})";
-    public string StatusText => IsCharging
-        ? $"Charging · {SourceLabel}"
-        : (IsConnected ? $"Connected · {SourceLabel}" : $"Disconnected · {SourceLabel}");
-    public string VisibilityActionText => IsHidden ? "Show on taskbar" : "Hide from taskbar";
+    public string TooltipText => $"{EffectiveName} — {BatteryPercent}% ({StateLabel})";
+    public string StatusText => $"{StateLabel} · {SourceLabel}";
+    public string VisibilityActionText => Loc.T(IsHidden ? "ShowOnTaskbarAction" : "HideFromTaskbarAction");
     public string VisibilityGlyph => IsHidden ? "" : ""; // Segoe Fluent Icons: View / Hide
     public double OpacityValue => IsConnected ? 1.0 : 0.55;
+
+    private string StateLabel => Loc.T(IsCharging ? "StatusCharging" : IsConnected ? "StatusConnected" : "StatusDisconnected");
 
     private string SourceLabel => Source switch
     {
         BatterySource.WindowsPnP => "Windows PnP",
         BatterySource.BleGatt => "BLE GATT",
-        BatterySource.UsbHid => "2.4GHz Receiver",
-        _ => "Unknown"
+        BatterySource.UsbHid => Loc.T("SourceReceiver"),
+        _ => "—"
     };
 
     public static DeviceDisplayItem FromModel(

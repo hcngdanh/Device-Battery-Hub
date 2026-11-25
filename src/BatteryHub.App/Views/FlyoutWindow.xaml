@@ -1,6 +1,7 @@
 <Window x:Class="BatteryHub.App.Views.FlyoutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:BatteryHub.App.Localization"
         Title="Battery Hub"
         Width="376"
         SizeToContent="Height"
@@ -17,353 +18,6 @@
         TextOptions.TextFormattingMode="Display"
         Deactivated="OnWindowDeactivated">
 
-    <Window.Resources>
-        <ResourceDictionary>
-        <ResourceDictionary.MergedDictionaries>
-            <ResourceDictionary Source="/BatteryHub;component/Assets/Logo.xaml"/>
-            <ResourceDictionary Source="/BatteryHub;component/Views/TaskbarItemTemplate.xaml"/>
-        </ResourceDictionary.MergedDictionaries>
-
-        <!-- Theme brushes: replaced at runtime by FlyoutWindow.ApplyTheme (dark defaults shown here) -->
-        <SolidColorBrush x:Key="BgBrush" Color="#FF2B2B2B"/>
-        <SolidColorBrush x:Key="StrokeBrush" Color="#1FFFFFFF"/>
-        <SolidColorBrush x:Key="CardBrush" Color="#FF333333"/>
-        <SolidColorBrush x:Key="DividerBrush" Color="#14FFFFFF"/>
-        <SolidColorBrush x:Key="TextBrush" Color="#FFFFFFFF"/>
-        <SolidColorBrush x:Key="SubTextBrush" Color="#FFABABAB"/>
-        <SolidColorBrush x:Key="ControlBrush" Color="#0FFFFFFF"/>
-        <SolidColorBrush x:Key="ControlHoverBrush" Color="#18FFFFFF"/>
-        <SolidColorBrush x:Key="ControlPressedBrush" Color="#0AFFFFFF"/>
-        <SolidColorBrush x:Key="ToggleOffBrush" Color="#FFC5C5C5"/>
-        <SolidColorBrush x:Key="TrackBrush" Color="#33FFFFFF"/>
-        <SolidColorBrush x:Key="TileBrush" Color="#12FFFFFF"/>
-        <SolidColorBrush x:Key="ThumbBrush" Color="#FF454545"/>
-        <SolidColorBrush x:Key="PreviewBgBrush" Color="#FF1C1C1C"/>
-        <SolidColorBrush x:Key="SystemAccent" Color="#FF4CC2FF"/>
-        <SolidColorBrush x:Key="OnAccentBrush" Color="#FF000000"/>
-
-        <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
-
-        <!-- Text styles -->
-        <Style x:Key="SectionHeader" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="Margin" Value="2,14,0,6"/>
-        </Style>
-        <Style x:Key="RowTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-        <Style x:Key="RowCaption" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource SubTextBrush}"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Margin" Value="0,1,0,0"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-        </Style>
-
-        <!-- Settings card + rows -->
-        <Style x:Key="SettingsCard" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="6"/>
-        </Style>
-        <Style x:Key="SettingsRow" TargetType="Grid">
-            <Setter Property="Margin" Value="14,10"/>
-            <Setter Property="MinHeight" Value="24"/>
-        </Style>
-        <Style x:Key="RowDivider" TargetType="Border">
-            <Setter Property="Height" Value="1"/>
-            <Setter Property="Background" Value="{DynamicResource DividerBrush}"/>
-        </Style>
-
-        <!-- Icon button (header) -->
-        <Style x:Key="IconButton" TargetType="Button">
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Width" Value="32"/>
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHoverBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlPressedBrush}"/>
-                                <Setter Property="Opacity" Value="0.75"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Small icon button inside device cards -->
-        <Style x:Key="CardIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
-            <Setter Property="Width" Value="26"/>
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="{DynamicResource SubTextBrush}"/>
-        </Style>
-
-        <!-- Windows 11 toggle switch -->
-        <Style x:Key="ToggleSwitch" TargetType="CheckBox">
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="CheckBox">
-                        <Grid Background="Transparent" Width="40" Height="20">
-                            <Border x:Name="Track"
-                                    CornerRadius="10"
-                                    BorderThickness="1"
-                                    BorderBrush="{DynamicResource ToggleOffBrush}"
-                                    Background="{DynamicResource ControlBrush}"/>
-                            <Ellipse x:Name="Knob"
-                                     Width="12" Height="12"
-                                     Margin="4,0,0,0"
-                                     HorizontalAlignment="Left"
-                                     VerticalAlignment="Center"
-                                     Fill="{DynamicResource ToggleOffBrush}"/>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Knob" Property="Width" Value="14"/>
-                                <Setter TargetName="Knob" Property="Height" Value="14"/>
-                                <Setter TargetName="Knob" Property="Margin" Value="3,0,0,0"/>
-                            </Trigger>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource SystemAccent}"/>
-                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource SystemAccent}"/>
-                                <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource OnAccentBrush}"/>
-                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
-                                <Setter TargetName="Knob" Property="Margin" Value="0,0,4,0"/>
-                            </Trigger>
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsChecked" Value="True"/>
-                                    <Condition Property="IsMouseOver" Value="True"/>
-                                </MultiTrigger.Conditions>
-                                <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0"/>
-                            </MultiTrigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Selectable tile with a live taskbar preview (Content) and a label (Tag) -->
-        <Style x:Key="PreviewTile" TargetType="RadioButton">
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Margin" Value="3,0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bd"
-                                CornerRadius="6"
-                                BorderThickness="1"
-                                BorderBrush="{DynamicResource StrokeBrush}"
-                                Background="{DynamicResource ControlBrush}"
-                                Padding="5">
-                            <StackPanel>
-                                <Border Height="30"
-                                        CornerRadius="4"
-                                        Background="{DynamicResource PreviewBgBrush}">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Text="{TemplateBinding Tag}"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           FontSize="11.5"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,6,0,1"/>
-                            </StackPanel>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHoverBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource SystemAccent}"/>
-                                <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
-                                <Setter TargetName="Bd" Property="Padding" Value="4"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Fluent slider -->
-        <Style x:Key="SliderFill" TargetType="RepeatButton">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="IsTabStop" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RepeatButton">
-                        <Border Height="4" CornerRadius="2" Background="{DynamicResource SystemAccent}"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="SliderBlank" TargetType="RepeatButton">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="IsTabStop" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RepeatButton">
-                        <Border Background="Transparent"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="SliderThumb" TargetType="Thumb">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Thumb">
-                        <Grid Width="20" Height="20" Background="Transparent">
-                            <Ellipse Fill="{DynamicResource ThumbBrush}" Stroke="{DynamicResource StrokeBrush}" StrokeThickness="1"/>
-                            <Ellipse x:Name="Core" Width="10" Height="10" Fill="{DynamicResource SystemAccent}"/>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Core" Property="Width" Value="12"/>
-                                <Setter TargetName="Core" Property="Height" Value="12"/>
-                            </Trigger>
-                            <Trigger Property="IsDragging" Value="True">
-                                <Setter TargetName="Core" Property="Width" Value="8"/>
-                                <Setter TargetName="Core" Property="Height" Value="8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="FluentSlider" TargetType="Slider">
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Slider">
-                        <Grid Height="22" VerticalAlignment="Center">
-                            <Border Height="4" CornerRadius="2" Background="{DynamicResource TrackBrush}" VerticalAlignment="Center"/>
-                            <Track x:Name="PART_Track">
-                                <Track.DecreaseRepeatButton>
-                                    <RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource SliderFill}"/>
-                                </Track.DecreaseRepeatButton>
-                                <Track.IncreaseRepeatButton>
-                                    <RepeatButton Command="Slider.IncreaseLarge" Style="{StaticResource SliderBlank}"/>
-                                </Track.IncreaseRepeatButton>
-                                <Track.Thumb>
-                                    <Thumb Style="{StaticResource SliderThumb}"/>
-                                </Track.Thumb>
-                            </Track>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Slim Windows 11 scrollbar: no arrows, 3px thumb that widens to 6px on hover -->
-        <Style x:Key="SlimScrollThumb" TargetType="Thumb">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Thumb">
-                        <Border CornerRadius="3" Background="{DynamicResource SubTextBrush}"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="SlimScrollBar" TargetType="ScrollBar">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="Width" Value="8"/>
-            <Setter Property="MinWidth" Value="8"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Grid Background="Transparent">
-                            <Track x:Name="PART_Track" IsDirectionReversed="True">
-                                <Track.DecreaseRepeatButton>
-                                    <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource SliderBlank}"/>
-                                </Track.DecreaseRepeatButton>
-                                <Track.IncreaseRepeatButton>
-                                    <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource SliderBlank}"/>
-                                </Track.IncreaseRepeatButton>
-                                <Track.Thumb>
-                                    <Thumb x:Name="Thumb"
-                                           Style="{StaticResource SlimScrollThumb}"
-                                           Width="3"
-                                           HorizontalAlignment="Center"
-                                           Opacity="0.5"/>
-                                </Track.Thumb>
-                            </Track>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Thumb" Property="Width" Value="6"/>
-                                <Setter TargetName="Thumb" Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <!-- Scrollbar floats in the card's right padding so the device cards keep their full width -->
-        <Style x:Key="SlimScrollViewer" TargetType="ScrollViewer">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollViewer">
-                        <Grid>
-                            <ScrollContentPresenter CanContentScroll="{TemplateBinding CanContentScroll}"/>
-                            <ScrollBar x:Name="PART_VerticalScrollBar"
-                                       Style="{StaticResource SlimScrollBar}"
-                                       HorizontalAlignment="Right"
-                                       Margin="0,0,-13,0"
-                                       Maximum="{TemplateBinding ScrollableHeight}"
-                                       ViewportSize="{TemplateBinding ViewportHeight}"
-                                       Value="{TemplateBinding VerticalOffset}"
-                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Thin rounded battery bar -->
-        <Style x:Key="BatteryBar" TargetType="ProgressBar">
-            <Setter Property="Height" Value="4"/>
-            <Setter Property="Minimum" Value="0"/>
-            <Setter Property="Maximum" Value="100"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ProgressBar">
-                        <Grid>
-                            <Border x:Name="PART_Track" CornerRadius="2" Background="{DynamicResource TrackBrush}"/>
-                            <Border x:Name="PART_Indicator" CornerRadius="2" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}"/>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        </ResourceDictionary>
-    </Window.Resources>
-
     <Border x:Name="RootCard"
             CornerRadius="8"
             BorderThickness="1"
@@ -379,28 +33,17 @@
             <!-- Header -->
             <Grid Margin="0,0,-6,6">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Button x:Name="BackButton"
-                        Style="{StaticResource IconButton}"
-                        Content="&#xE72B;"
-                        ToolTip="Back"
-                        Margin="-8,0,4,0"
-                        Visibility="Collapsed"
-                        Click="OnBackClick"/>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Image x:Name="LogoImage"
-                           Source="{StaticResource AppLogo}"
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="{StaticResource AppLogo}"
                            Width="22" Height="22"
                            Margin="0,0,10,0"
                            VerticalAlignment="Center"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
-                    <TextBlock x:Name="TitleText"
-                               Text="Battery Hub"
+                    <TextBlock Text="{l:Loc AppName}"
                                Foreground="{DynamicResource TextBrush}"
                                FontFamily="Segoe UI Variable Display, Segoe UI"
                                FontSize="15"
@@ -412,314 +55,166 @@
                                FontSize="11"
                                Margin="8,2,0,0"
                                VerticalAlignment="Center"/>
+                    <!-- Game mode chip -->
+                    <Border x:Name="GameModeChip"
+                            Visibility="Collapsed"
+                            CornerRadius="9"
+                            Padding="6,2"
+                            Margin="8,1,0,0"
+                            VerticalAlignment="Center"
+                            ToolTip="{l:Loc GameModeActive}"
+                            Background="{DynamicResource ControlHoverBrush}">
+                        <TextBlock Text="&#xE7FC;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                    </Border>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button x:Name="RefreshButton"
-                            Style="{StaticResource IconButton}"
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Style="{StaticResource IconButton}"
                             Content="&#xE72C;"
-                            ToolTip="Refresh now"
+                            ToolTip="{l:Loc Refresh}"
                             Click="OnRefreshClick"/>
-                    <Button x:Name="SettingsButton"
-                            Style="{StaticResource IconButton}"
+                    <Button Style="{StaticResource IconButton}"
                             Content="&#xE713;"
-                            ToolTip="Settings"
+                            ToolTip="{l:Loc Settings}"
                             Margin="2,0,0,0"
                             Click="OnSettingsClick"/>
                 </StackPanel>
             </Grid>
 
-            <!-- ============ Devices view ============ -->
-            <StackPanel x:Name="DevicesPanel">
-                <Border x:Name="EmptyStatePanel"
-                        Style="{StaticResource SettingsCard}"
-                        Visibility="Collapsed"
-                        Padding="20,22"
-                        Margin="0,4,0,0">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="&#xE702;"
-                                   FontFamily="{StaticResource IconFont}"
-                                   FontSize="26"
-                                   Foreground="{DynamicResource SubTextBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,10"/>
-                        <TextBlock x:Name="EmptyTitleText"
-                                   Text="No battery devices connected"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,4"/>
-                        <TextBlock x:Name="EmptyDescText"
-                                   Text="Turn on your Bluetooth device or plug in your 2.4GHz receiver."
-                                   Foreground="{DynamicResource SubTextBrush}"
-                                   FontSize="11.5"
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
+            <!-- Empty state -->
+            <Border x:Name="EmptyStatePanel"
+                    Style="{StaticResource SettingsCard}"
+                    Visibility="Collapsed"
+                    Padding="20,22"
+                    Margin="0,4,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="&#xE702;"
+                               FontFamily="{StaticResource IconFont}"
+                               FontSize="26"
+                               Foreground="{DynamicResource SubTextBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,10"/>
+                    <TextBlock Text="{l:Loc NoDevicesTitle}"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,4"/>
+                    <TextBlock Text="{l:Loc NoDevicesDesc}"
+                               Foreground="{DynamicResource SubTextBrush}"
+                               FontSize="11.5"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
 
-                <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0" Style="{StaticResource SlimScrollViewer}">
-                    <ItemsControl x:Name="DevicesList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border x:Name="CardRoot"
-                                        Style="{StaticResource SettingsCard}"
-                                        Padding="12,10,10,12"
-                                        Margin="0,0,0,6"
-                                        Opacity="{Binding OpacityValue}"
-                                        ToolTip="{Binding TooltipText}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
+            <!-- Devices -->
+            <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0" Style="{StaticResource SlimScrollViewer}">
+                <ItemsControl x:Name="DevicesList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border x:Name="CardRoot"
+                                    Style="{StaticResource SettingsCard}"
+                                    Padding="12,10,10,12"
+                                    Margin="0,0,0,6"
+                                    Opacity="{Binding OpacityValue}"
+                                    ToolTip="{Binding TooltipText}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
 
-                                        <!-- Device icon tile -->
-                                        <Border Grid.RowSpan="2"
-                                                Width="38" Height="38"
-                                                CornerRadius="8"
-                                                Background="{DynamicResource TileBrush}"
+                                    <Border Grid.RowSpan="2"
+                                            Width="38" Height="38"
+                                            CornerRadius="8"
+                                            Background="{DynamicResource TileBrush}"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,12,0">
+                                        <Viewbox Width="20" Height="20">
+                                            <Canvas Width="16" Height="16">
+                                                <Path Data="{Binding IconGeometry}"
+                                                      Stroke="{Binding AccentBrush}"
+                                                      StrokeThickness="1.3"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"/>
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding EffectiveName}"
+                                                   Foreground="{DynamicResource TextBrush}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding StatusText}"
+                                                   Foreground="{DynamicResource SubTextBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,1,0,0"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+
+                                    <StackPanel x:Name="Actions"
+                                                Grid.Column="2"
+                                                Orientation="Horizontal"
                                                 VerticalAlignment="Center"
-                                                Margin="0,0,12,0">
-                                            <Viewbox Width="20" Height="20">
-                                                <Canvas Width="16" Height="16">
-                                                    <Path Data="{Binding IconGeometry}"
-                                                          Stroke="{Binding AccentBrush}"
-                                                          StrokeThickness="1.3"
-                                                          StrokeStartLineCap="Round"
-                                                          StrokeEndLineCap="Round"
-                                                          StrokeLineJoin="Round"/>
-                                                </Canvas>
-                                            </Viewbox>
-                                        </Border>
+                                                Margin="6,0,4,0"
+                                                Opacity="0">
+                                        <Button Style="{StaticResource CardIconButton}"
+                                                Content="&#xE8AB;"
+                                                ToolTip="{l:Loc ChangeIcon}"
+                                                Tag="{Binding Id}"
+                                                Click="OnCycleCategoryClick"/>
+                                        <Button Style="{StaticResource CardIconButton}"
+                                                Content="{Binding VisibilityGlyph}"
+                                                ToolTip="{Binding VisibilityActionText}"
+                                                Tag="{Binding Id}"
+                                                Click="OnToggleVisibilityClick"/>
+                                    </StackPanel>
 
-                                        <!-- Name + status -->
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding EffectiveName}"
-                                                       Foreground="{DynamicResource TextBrush}"
-                                                       FontSize="13"
-                                                       FontWeight="SemiBold"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Text="{Binding StatusText}"
-                                                       Foreground="{DynamicResource SubTextBrush}"
-                                                       FontSize="11"
-                                                       Margin="0,1,0,0"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </StackPanel>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Viewbox Width="11" Height="13"
+                                                 Visibility="{Binding ChargingVisibility}"
+                                                 Margin="0,0,3,0"
+                                                 VerticalAlignment="Center">
+                                            <Canvas Width="16" Height="16">
+                                                <Path Data="{Binding ChargingBoltGeometry}" Fill="{Binding ChargingBrush}"/>
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding PercentText}"
+                                                   Foreground="{Binding AccentBrush}"
+                                                   FontFamily="Segoe UI Variable Display, Segoe UI"
+                                                   FontSize="17"
+                                                   FontWeight="SemiBold"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
 
-                                        <!-- Hover actions -->
-                                        <StackPanel x:Name="Actions"
-                                                    Grid.Column="2"
-                                                    Orientation="Horizontal"
-                                                    VerticalAlignment="Center"
-                                                    Margin="6,0,4,0"
-                                                    Opacity="0">
-                                            <Button Style="{StaticResource CardIconButton}"
-                                                    Content="&#xE8AB;"
-                                                    ToolTip="Change device icon"
-                                                    Tag="{Binding Id}"
-                                                    Click="OnCycleCategoryClick"/>
-                                            <Button Style="{StaticResource CardIconButton}"
-                                                    Content="{Binding VisibilityGlyph}"
-                                                    ToolTip="{Binding VisibilityActionText}"
-                                                    Tag="{Binding Id}"
-                                                    Click="OnToggleVisibilityClick"/>
-                                        </StackPanel>
-
-                                        <!-- Percent -->
-                                        <StackPanel Grid.Column="3"
-                                                    Orientation="Horizontal"
-                                                    VerticalAlignment="Center">
-                                            <Viewbox Width="11" Height="13"
-                                                     Visibility="{Binding ChargingVisibility}"
-                                                     Margin="0,0,3,0"
-                                                     VerticalAlignment="Center">
-                                                <Canvas Width="16" Height="16">
-                                                    <Path Data="{Binding ChargingBoltGeometry}" Fill="{Binding ChargingBrush}"/>
-                                                </Canvas>
-                                            </Viewbox>
-                                            <TextBlock Text="{Binding PercentText}"
-                                                       Foreground="{Binding AccentBrush}"
-                                                       FontFamily="Segoe UI Variable Display, Segoe UI"
-                                                       FontSize="17"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-
-                                        <!-- Battery bar -->
-                                        <ProgressBar Grid.Row="1"
-                                                     Grid.Column="1"
-                                                     Grid.ColumnSpan="3"
-                                                     Style="{StaticResource BatteryBar}"
-                                                     Value="{Binding BatteryPercent, Mode=OneWay}"
-                                                     Foreground="{Binding AccentBrush}"
-                                                     Margin="0,8,0,0"/>
-                                    </Grid>
-                                </Border>
-                                <DataTemplate.Triggers>
-                                    <Trigger SourceName="CardRoot" Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Actions" Property="Opacity" Value="1"/>
-                                    </Trigger>
-                                </DataTemplate.Triggers>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-            </StackPanel>
-
-            <!-- ============ Settings view ============ -->
-            <StackPanel x:Name="SettingsPanel" Visibility="Collapsed">
-
-                <!-- Taskbar -->
-                <TextBlock Text="Taskbar" Style="{StaticResource SectionHeader}" Margin="2,4,0,6"/>
-                <Border Style="{StaticResource SettingsCard}">
-                    <StackPanel>
-                        <Grid Style="{StaticResource SettingsRow}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Show on taskbar" Style="{StaticResource RowTitle}"/>
-                            <CheckBox x:Name="OverlayCheckBox" Grid.Column="1"
-                                      Style="{StaticResource ToggleSwitch}"
-                                      Click="OnOverlayCheckChanged"/>
-                        </Grid>
-                        <Border Style="{StaticResource RowDivider}"/>
-                        <StackPanel Margin="14,10,14,12">
-                            <TextBlock Text="Taskbar display" Style="{StaticResource RowTitle}"/>
-                            <TextBlock Text="Device icon is always shown"
-                                       Style="{StaticResource RowCaption}"/>
-                            <UniformGrid Columns="3" Margin="-3,8,-3,0">
-                                <RadioButton x:Name="LayoutPercentRadio" GroupName="TaskbarLayout"
-                                             Style="{StaticResource PreviewTile}"
-                                             Tag="Percentage"
-                                             Checked="OnTaskbarLayoutChecked">
-                                    <ContentControl x:Name="PreviewPercent" ContentTemplate="{StaticResource TaskbarItemContent}" Focusable="False"/>
-                                </RadioButton>
-                                <RadioButton x:Name="LayoutBatteryRadio" GroupName="TaskbarLayout"
-                                             Style="{StaticResource PreviewTile}"
-                                             Tag="Battery"
-                                             Checked="OnTaskbarLayoutChecked">
-                                    <ContentControl x:Name="PreviewBattery" ContentTemplate="{StaticResource TaskbarItemContent}" Focusable="False"/>
-                                </RadioButton>
-                                <RadioButton x:Name="LayoutBothRadio" GroupName="TaskbarLayout"
-                                             Style="{StaticResource PreviewTile}"
-                                             Tag="Battery + %"
-                                             Checked="OnTaskbarLayoutChecked">
-                                    <ContentControl x:Name="PreviewBoth" ContentTemplate="{StaticResource TaskbarItemContent}" Focusable="False"/>
-                                </RadioButton>
-                            </UniformGrid>
-                        </StackPanel>
-                        <Border Style="{StaticResource RowDivider}"/>
-                        <Grid Style="{StaticResource SettingsRow}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Text="Color by battery level" Style="{StaticResource RowTitle}"/>
-                                <TextBlock x:Name="ColorCodeCaption"
-                                           Text="Green &gt; 50% · Yellow 20–50% · Red &lt; 20%"
-                                           Style="{StaticResource RowCaption}"/>
-                            </StackPanel>
-                            <CheckBox x:Name="ColorCodeCheckBox" Grid.Column="1"
-                                      Style="{StaticResource ToggleSwitch}"
-                                      Click="OnColorCodeCheckChanged"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- Notifications -->
-                <TextBlock Text="Notifications" Style="{StaticResource SectionHeader}"/>
-                <Border Style="{StaticResource SettingsCard}">
-                    <StackPanel>
-                        <Grid Style="{StaticResource SettingsRow}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Low battery" Style="{StaticResource RowTitle}"/>
-                            <CheckBox x:Name="LowBatteryAlertCheck" Grid.Column="1"
-                                      Style="{StaticResource ToggleSwitch}"
-                                      Click="OnLowBatteryAlertCheckChanged"/>
-                        </Grid>
-                        <Grid Style="{StaticResource SettingsRow}" Margin="14,0,14,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Threshold"
-                                       Foreground="{DynamicResource SubTextBrush}"
-                                       FontSize="11.5"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,14,0"/>
-                            <Slider x:Name="LowThresholdSlider"
-                                    Grid.Column="1"
-                                    Style="{StaticResource FluentSlider}"
-                                    Minimum="5"
-                                    Maximum="40"
-                                    SmallChange="5"
-                                    LargeChange="5"
-                                    TickFrequency="5"
-                                    IsSnapToTickEnabled="True"
-                                    IsMoveToPointEnabled="True"
-                                    ValueChanged="OnLowThresholdChanged"/>
-                            <TextBlock x:Name="LowThresholdText"
-                                       Grid.Column="2"
-                                       Text="20%"
-                                       Width="38"
-                                       TextAlignment="Right"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       FontWeight="SemiBold"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                        <Border Style="{StaticResource RowDivider}"/>
-                        <Grid Style="{StaticResource SettingsRow}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Fully charged (100%)" Style="{StaticResource RowTitle}"/>
-                            <CheckBox x:Name="FullBatteryAlertCheck" Grid.Column="1"
-                                      Style="{StaticResource ToggleSwitch}"
-                                      Click="OnFullBatteryAlertCheckChanged"/>
-                        </Grid>
-                        <Border Style="{StaticResource RowDivider}"/>
-                        <Grid Style="{StaticResource SettingsRow}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Charger plugged in / unplugged" Style="{StaticResource RowTitle}"/>
-                            <CheckBox x:Name="ChargingStateAlertCheck" Grid.Column="1"
-                                      Style="{StaticResource ToggleSwitch}"
-                                      Click="OnChargingStateAlertCheckChanged"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- General -->
-                <TextBlock Text="General" Style="{StaticResource SectionHeader}"/>
-                <Border Style="{StaticResource SettingsCard}">
-                    <Grid Style="{StaticResource SettingsRow}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Start with Windows" Style="{StaticResource RowTitle}"/>
-                        <CheckBox x:Name="StartupCheckBox" Grid.Column="1"
-                                  Style="{StaticResource ToggleSwitch}"
-                                  Click="OnStartupCheckChanged"/>
-                    </Grid>
-                </Border>
-            </StackPanel>
+                                    <ProgressBar Grid.Row="1"
+                                                 Grid.Column="1"
+                                                 Grid.ColumnSpan="3"
+                                                 Style="{StaticResource BatteryBar}"
+                                                 Value="{Binding BatteryPercent, Mode=OneWay}"
+                                                 Foreground="{Binding AccentBrush}"
+                                                 Margin="0,8,0,0"/>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <Trigger SourceName="CardRoot" Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Actions" Property="Opacity" Value="1"/>
+                                </Trigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
         </StackPanel>
     </Border>
 </Window>

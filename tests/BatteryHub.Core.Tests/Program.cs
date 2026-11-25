@@ -104,15 +104,15 @@ string tempSettings2 = Path.Combine(Path.GetTempPath(), $"bh_test_{Guid.NewGuid(
 try
 {
     var ss = new SettingsService(tempSettings2);
-    ss.Save(new AppSettings { LowBatteryThreshold = 20, EnableLowBatteryNotification = true, EnableChargingStateNotification = true });
+    ss.Save(new AppSettings { LowBatteryThreshold = 20, EnableLowBatteryNotification = true, EnableChargingStateNotification = true, EnableCriticalBatteryNotification = false });
     using var monitor = new BatteryMonitorService(ss, liveProvider: mockProvider);
 
     int alertCount = 0;
     var events = new List<NotificationEventType>();
-    monitor.NotificationTriggered += (_, type, _) =>
+    monitor.NotificationTriggered += n =>
     {
-        events.Add(type);
-        if (type == NotificationEventType.LowBattery) alertCount++;
+        events.Add(n.Type);
+        if (n.Type == NotificationEventType.LowBattery) alertCount++;
     };
 
     await monitor.RefreshAsync();
@@ -199,6 +199,100 @@ var sorted = BatteryMonitorService.SortForDisplay(new[]
     new BluetoothDeviceBattery { Id = "bt-on", Name = "WH-CH520", Category = DeviceCategory.Headphones, IsConnected = true },
 });
 Assert(sorted.Select(d => d.Id).SequenceEqual(new[] { "bt-on", "hid-on", "bt-off" }), "Connected devices should come first, then category/name");
+
+// 7. NotificationEngine: critical repeat, full threshold, connection, reminder
+{
+    var engine = new NotificationEngine();
+    var cfg = new AppSettings
+    {
+        EnableCriticalBatteryNotification = true, CriticalBatteryThreshold = 10, CriticalRepeatMinutes = 10,
+        EnableConnectionNotification = true,
+        EnableFullBatteryNotification = true, FullChargeMode = FullChargeMode.Threshold, FullChargeThreshold = 80,
+        EnableChargeReminder = true, ChargeReminderTime = new TimeSpan(21, 0, 0), ChargeReminderThreshold = 30
+    };
+    var t0 = new DateTimeOffset(2026, 11, 25, 20, 0, 0, TimeSpan.FromHours(7));
+    var dev = new BluetoothDeviceBattery { Id = "x", Name = "Mouse", BatteryPercent = 8, IsConnected = true };
+
+    var r1 = engine.Evaluate([dev], cfg, t0);
+    Assert(r1.Count(n => n.Type == NotificationEventType.CriticalBattery) == 1, "Critical fires at 8% (threshold 10)");
+    Assert(!r1.Any(n => n.Type == NotificationEventType.LowBattery), "Low is suppressed when critical fires at the same time");
+    Assert(!engine.Evaluate([dev], cfg, t0.AddMinutes(5)).Any(n => n.Type == NotificationEventType.CriticalBattery), "Critical does not repeat before the interval");
+    Assert(engine.Evaluate([dev], cfg, t0.AddMinutes(10)).Any(n => n.Type == NotificationEventType.CriticalBattery), "Critical repeats after 10 minutes");
+    Assert(!engine.Evaluate([dev with { IsCharging = true }], cfg, t0.AddMinutes(30)).Any(n => n.Type == NotificationEventType.CriticalBattery), "No critical while charging");
+
+    var r2 = engine.Evaluate([dev with { IsConnected = false }], cfg, t0.AddMinutes(31));
+    Assert(r2.Any(n => n.Type == NotificationEventType.DeviceDisconnected), "Disconnect is announced");
+    Assert(engine.Evaluate([dev], cfg, t0.AddMinutes(32)).Any(n => n.Type == NotificationEventType.DeviceConnected), "Reconnect is announced");
+
+    var full = dev with { BatteryPercent = 80, IsCharging = true };
+    Assert(engine.Evaluate([full], cfg, t0.AddMinutes(40)).Any(n => n.Type == NotificationEventType.FullBattery), "Threshold mode: charging device at 80% counts as full");
+    Assert(!engine.Evaluate([full with { BatteryPercent = 85 }], cfg, t0.AddMinutes(41)).Any(n => n.Type == NotificationEventType.FullBattery), "Full fires once per charge");
+
+    var engine2 = new NotificationEngine();
+    var low = dev with { BatteryPercent = 25 };
+    var headset = new BluetoothDeviceBattery { Id = "h", Name = "Headset", BatteryPercent = 90, IsConnected = true };
+    Assert(!engine2.Evaluate([low, headset], cfg, t0).Any(n => n.Type == NotificationEventType.ChargeReminder), "No reminder before 21:00");
+    var rem = engine2.Evaluate([low, headset], cfg, t0.AddHours(1).AddMinutes(1)).SingleOrDefault(n => n.Type == NotificationEventType.ChargeReminder);
+    Assert(rem is not null && rem.Devices.Count == 1 && rem.Device.Id == "x", "Reminder at 21:01 lists only devices at or below 30%");
+    Assert(!engine2.Evaluate([low], cfg, t0.AddHours(2)).Any(n => n.Type == NotificationEventType.ChargeReminder), "Reminder fires once per day");
+    Assert(engine2.Evaluate([low], cfg, t0.AddDays(1).AddHours(1).AddMinutes(5)).Any(n => n.Type == NotificationEventType.ChargeReminder), "Reminder fires again the next day");
+}
+
+// 8. Battery history: change-only logging, read back, prune
+{
+    string histDir = Path.Combine(Path.GetTempPath(), "bh_hist_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var history = new BatteryHistoryService(histDir);
+        var now = new DateTimeOffset(2026, 11, 25, 10, 0, 0, TimeSpan.Zero);
+        var a = new BluetoothDeviceBattery { Id = "a", Name = "Mouse, wireless", BatteryPercent = 50, IsConnected = true };
+        history.Record([a], now, 30);
+        history.Record([a], now.AddMinutes(1), 30);                       // unchanged -> skipped
+        history.Record([a with { BatteryPercent = 49 }], now.AddMinutes(2), 30);
+        history.Record([a with { BatteryPercent = 49 }], now.AddMinutes(20), 30); // heartbeat
+        var samples = history.Read("a", now.AddHours(-1));
+        Assert(samples.Count == 3, $"History writes on change + heartbeat only (got {samples.Count})");
+        Assert(samples[0].DeviceName == "Mouse  wireless" && samples[1].Percent == 49, "History round-trips name and level");
+
+        File.WriteAllText(Path.Combine(histDir, "2020-01-01.csv"), "timestamp,id,percent,charging,connected,name\n");
+        history.Prune(30, now);
+        Assert(!File.Exists(Path.Combine(histDir, "2020-01-01.csv")), "Prune deletes files older than retention");
+        history.Clear();
+        Assert(history.Read(null, now.AddDays(-1)).Count == 0, "Clear removes all samples");
+    }
+    finally
+    {
+        if (Directory.Exists(histDir)) Directory.Delete(histDir, true);
+    }
+}
+
+// 9. Settings export / import / normalization
+{
+    string exportPath = Path.Combine(Path.GetTempPath(), $"bh_export_{Guid.NewGuid():N}.json");
+    try
+    {
+        var cfg = new AppSettings { Language = AppLanguage.Vietnamese, Theme = AppTheme.Dark, CriticalRepeatMinutes = 12, HistoryRetentionDays = 40, GameOverlayDeviceIds = { "Dev1" } };
+        SettingsService.Export(cfg, exportPath);
+        Assert(File.ReadAllText(exportPath).Contains("\"Vietnamese\""), "Export writes enums as names");
+        var imported = SettingsService.Import(exportPath);
+        Assert(imported.Language == AppLanguage.Vietnamese && imported.Theme == AppTheme.Dark, "Import restores enums");
+        Assert(imported.CriticalRepeatMinutes == 10 && imported.HistoryRetentionDays == 30, "Normalize snaps to allowed choices");
+        Assert(imported.GameOverlayDeviceIds.Contains("dev1"), "Imported id sets are case-insensitive");
+
+        File.WriteAllText(exportPath, "not json");
+        bool threw = false;
+        try { SettingsService.Import(exportPath); } catch (InvalidDataException) { threw = true; }
+        Assert(threw, "Importing a non-settings file throws InvalidDataException");
+
+        File.WriteAllText(exportPath, "{\"TaskbarLayout\": 2, \"LowBatteryThreshold\": 25}");
+        var legacy = SettingsService.Import(exportPath);
+        Assert(legacy.TaskbarLayout == TaskbarLayout.BatteryAndPercentage && legacy.LowBatteryThreshold == 25, "Older files with numeric enums still load");
+    }
+    finally
+    {
+        if (File.Exists(exportPath)) File.Delete(exportPath);
+    }
+}
 
 Console.WriteLine($"BatteryHub.Core.Tests: {passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;
