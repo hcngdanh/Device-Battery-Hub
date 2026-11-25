@@ -26,4 +26,14 @@ public sealed class AppSettings
     public Dictionary<string, string> DeviceAliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, DeviceCategory> CategoryOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> HiddenDeviceIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Deep copy, so a background refresh can read settings while the UI edits the original.</summary>
+    public AppSettings Clone()
+    {
+        var copy = (AppSettings)MemberwiseClone();
+        copy.DeviceAliases = new Dictionary<string, string>(DeviceAliases, StringComparer.OrdinalIgnoreCase);
+        copy.CategoryOverrides = new Dictionary<string, DeviceCategory>(CategoryOverrides, StringComparer.OrdinalIgnoreCase);
+        copy.HiddenDeviceIds = new HashSet<string>(HiddenDeviceIds, StringComparer.OrdinalIgnoreCase);
+        return copy;
+    }
 }

@@ -10,7 +10,7 @@ namespace BatteryHub.Core.Services.Providers;
 /// Reads asynchronous battery telemetry pushed by Attack Shark X11 2.4GHz USB receivers
 /// (VID 0x1D57, PID 0xFA60 / 0xFA55) via Interrupt-IN HID Report ID 0x03.
 /// </summary>
-public sealed class AttackSharkHidBatteryProvider : IBatteryProvider, IDisposable
+public sealed class AttackSharkHidBatteryProvider : IPushBatteryProvider, IDisposable
 {
     public const ushort AttackSharkVendorId = 0x1D57;
     public const ushort AttackSharkReceiverProductId = 0xFA60;
@@ -150,89 +150,18 @@ public sealed class AttackSharkHidBatteryProvider : IBatteryProvider, IDisposabl
 
     private static List<string> EnumerateTargetHidPaths()
     {
-        var paths = new List<string>();
         NativeMethods.HidD_GetHidGuid(out Guid hidGuid);
-
-        IntPtr devInfoSet = NativeMethods.SetupDiGetClassDevs(
-            ref hidGuid,
-            null,
-            IntPtr.Zero,
-            NativeMethods.DIGCF_DEVICEINTERFACE | NativeMethods.DIGCF_PRESENT);
-
-        if (devInfoSet == NativeMethods.INVALID_HANDLE_VALUE)
-            return paths;
-
-        try
-        {
-            var ifaceData = new NativeMethods.SP_DEVICE_INTERFACE_DATA
-            {
-                cbSize = (uint)Marshal.SizeOf<NativeMethods.SP_DEVICE_INTERFACE_DATA>()
-            };
-
-            uint index = 0;
-            while (NativeMethods.SetupDiEnumDeviceInterfaces(devInfoSet, IntPtr.Zero, ref hidGuid, index++, ref ifaceData))
-            {
-                var devInfoData = new NativeMethods.SP_DEVINFO_DATA
-                {
-                    cbSize = (uint)Marshal.SizeOf<NativeMethods.SP_DEVINFO_DATA>()
-                };
-
-                NativeMethods.SetupDiGetDeviceInterfaceDetail(
-                    devInfoSet,
-                    ref ifaceData,
-                    IntPtr.Zero,
-                    0,
-                    out uint requiredSize,
-                    ref devInfoData);
-
-                if (requiredSize == 0)
-                    continue;
-
-                IntPtr detailBuffer = Marshal.AllocHGlobal((int)requiredSize);
-                try
-                {
-                    int cbSize = IntPtr.Size == 8 ? 8 : 6;
-                    Marshal.WriteInt32(detailBuffer, cbSize);
-
-                    if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(
-                            devInfoSet,
-                            ref ifaceData,
-                            detailBuffer,
-                            requiredSize,
-                            out _,
-                            ref devInfoData))
-                    {
-                        continue;
-                    }
-
-                    string? devicePath = Marshal.PtrToStringUni(IntPtr.Add(detailBuffer, 4));
-                    if (string.IsNullOrWhiteSpace(devicePath))
-                        continue;
-
-                    // Quick path filter before opening handle
-                    if (!devicePath.Contains("vid_1d57", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    if (devicePath.Contains("pid_fa60", StringComparison.OrdinalIgnoreCase) ||
-                        devicePath.Contains("pid_fa55", StringComparison.OrdinalIgnoreCase) ||
-                        devicePath.Contains("pid_2125", StringComparison.OrdinalIgnoreCase))
-                    {
-                        paths.Add(devicePath);
-                    }
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(detailBuffer);
-                }
-            }
-        }
-        finally
-        {
-            NativeMethods.SetupDiDestroyDeviceInfoList(devInfoSet);
-        }
-
-        return paths;
+        return SetupApi.EnumerateInterfaces(hidGuid)
+            .Select(i => i.DevicePath)
+            .Where(IsAttackSharkPath)
+            .ToList();
     }
+
+    private static bool IsAttackSharkPath(string devicePath) =>
+        devicePath.Contains("vid_1d57", StringComparison.OrdinalIgnoreCase) &&
+        (devicePath.Contains("pid_fa60", StringComparison.OrdinalIgnoreCase) ||
+         devicePath.Contains("pid_fa55", StringComparison.OrdinalIgnoreCase) ||
+         devicePath.Contains("pid_2125", StringComparison.OrdinalIgnoreCase));
 
     private async Task ListenLoopAsync(string devicePath, CancellationToken ct)
     {

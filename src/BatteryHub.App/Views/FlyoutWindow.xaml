@@ -279,6 +279,72 @@
             </Setter>
         </Style>
 
+        <!-- Slim Windows 11 scrollbar: no arrows, 3px thumb that widens to 6px on hover -->
+        <Style x:Key="SlimScrollThumb" TargetType="Thumb">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border CornerRadius="3" Background="{DynamicResource SubTextBrush}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SlimScrollBar" TargetType="ScrollBar">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="MinWidth" Value="8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource SliderBlank}"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource SliderBlank}"/>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="Thumb"
+                                           Style="{StaticResource SlimScrollThumb}"
+                                           Width="3"
+                                           HorizontalAlignment="Center"
+                                           Opacity="0.5"/>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Thumb" Property="Width" Value="6"/>
+                                <Setter TargetName="Thumb" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Scrollbar floats in the card's right padding so the device cards keep their full width -->
+        <Style x:Key="SlimScrollViewer" TargetType="ScrollViewer">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid>
+                            <ScrollContentPresenter CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                            <ScrollBar x:Name="PART_VerticalScrollBar"
+                                       Style="{StaticResource SlimScrollBar}"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,0,-13,0"
+                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Value="{TemplateBinding VerticalOffset}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Thin rounded battery bar -->
         <Style x:Key="BatteryBar" TargetType="ProgressBar">
             <Setter Property="Height" Value="4"/>
@@ -392,7 +458,7 @@
                     </StackPanel>
                 </Border>
 
-                <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0" Style="{StaticResource SlimScrollViewer}">
                     <ItemsControl x:Name="DevicesList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>

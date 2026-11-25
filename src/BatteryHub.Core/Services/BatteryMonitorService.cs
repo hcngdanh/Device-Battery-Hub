@@ -28,12 +28,33 @@ public sealed class BatteryMonitorService : IDisposable
     private readonly HashSet<string> _notifiedFullIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _previousChargingState = new(StringComparer.OrdinalIgnoreCase);
 
+    // Guards _settingsSnapshot / _latestRaw / _latestDevices, which are shared between the
+    // refresh thread (timer / thread pool) and the UI thread (UpdateSettings).
+    private readonly object _stateLock = new();
+
     private System.Threading.Timer? _timer;
+    private AppSettings _settingsSnapshot;
+    private IReadOnlyList<BluetoothDeviceBattery> _latestRaw = Array.Empty<BluetoothDeviceBattery>();
     private IReadOnlyList<BluetoothDeviceBattery> _latestDevices = Array.Empty<BluetoothDeviceBattery>();
+    private bool _hasPublished;
+    private volatile bool _disposed;
 
-    public AppSettings Settings { get; private set; }
-    public IReadOnlyList<BluetoothDeviceBattery> Devices => _latestDevices;
+    /// <summary>
+    /// Live settings for the UI thread. Change them only through <see cref="UpdateSettings"/>;
+    /// background refreshes work on an immutable snapshot so they never see a collection mid-edit.
+    /// </summary>
+    public AppSettings Settings { get; }
 
+    public IReadOnlyList<BluetoothDeviceBattery> Devices
+    {
+        get { lock (_stateLock) return _latestDevices; }
+    }
+
+    /// <summary>
+    /// Raised when the visible device list changes (battery, connection, charging, name, category,
+    /// hidden flag) or settings are updated. Identical consecutive scans do not raise it.
+    /// May be raised on a background thread.
+    /// </summary>
     public event Action<IReadOnlyList<BluetoothDeviceBattery>>? DevicesUpdated;
     public event Action<BluetoothDeviceBattery, NotificationEventType, string>? NotificationTriggered;
 
@@ -55,12 +76,10 @@ public sealed class BatteryMonitorService : IDisposable
         _settingsService = settingsService;
         _liveProviders = liveProviders.ToList();
         Settings = _settingsService.Load();
+        _settingsSnapshot = Settings.Clone();
 
-        foreach (var provider in _liveProviders)
-        {
-            if (provider is AttackSharkHidBatteryProvider hidProvider)
-                hidProvider.BatteryChanged += () => _ = RefreshAsync();
-        }
+        foreach (var provider in _liveProviders.OfType<IPushBatteryProvider>())
+            provider.BatteryChanged += () => _ = RefreshAsync();
     }
 
     private static IReadOnlyList<IBatteryProvider> CreateDefaultLiveProviders() =>
@@ -71,28 +90,36 @@ public sealed class BatteryMonitorService : IDisposable
 
     public void Start()
     {
-        RestartTimer();
+        _timer ??= new System.Threading.Timer(_ => _ = RefreshAsync(), null, RefreshIntervalMs, RefreshIntervalMs);
         _ = RefreshAsync();
     }
 
-    private void RestartTimer()
-    {
-        _timer?.Dispose();
-        _timer = new System.Threading.Timer(_ => _ = RefreshAsync(), null, RefreshIntervalMs, RefreshIntervalMs);
-    }
-
-    public void UpdateSettings(Action<AppSettings> mutate, bool triggerRefresh = true)
+    /// <summary>
+    /// Mutates and persists settings (call on the UI thread), then immediately re-applies them to the
+    /// last scan so the change shows up without waiting for the next poll.
+    /// </summary>
+    public void UpdateSettings(Action<AppSettings> mutate)
     {
         mutate(Settings);
         _settingsService.Save(Settings);
-        if (triggerRefresh)
-            _ = RefreshAsync();
+
+        var snapshot = Settings.Clone();
+        IReadOnlyList<BluetoothDeviceBattery> processed;
+        lock (_stateLock)
+        {
+            _settingsSnapshot = snapshot;
+            processed = SortForDisplay(ApplySettings(_latestRaw, snapshot));
+            _latestDevices = processed;
+            _hasPublished = true;
+        }
+
+        DevicesUpdated?.Invoke(processed);
     }
 
     public async Task<IReadOnlyList<BluetoothDeviceBattery>> RefreshAsync(CancellationToken cancellationToken = default)
     {
-        if (!await _refreshLock.WaitAsync(0, cancellationToken))
-            return _latestDevices;
+        if (_disposed || !await _refreshLock.WaitAsync(0, cancellationToken))
+            return Devices;
 
         try
         {
@@ -103,17 +130,42 @@ public sealed class BatteryMonitorService : IDisposable
                 .Select(g => g.First())
                 .ToList();
 
-            var processed = ApplySettings(raw, Settings);
+            AppSettings settings;
+            IReadOnlyList<BluetoothDeviceBattery> processed;
+            bool changed;
+            lock (_stateLock)
+            {
+                settings = _settingsSnapshot;
+                processed = SortForDisplay(ApplySettings(raw, settings));
+                changed = !_hasPublished || !HasSameContent(_latestDevices, processed);
+                _latestRaw = raw;
+                _latestDevices = processed;
+                _hasPublished = true;
+            }
 
-            _latestDevices = processed;
-            CheckNotifications(processed);
-            DevicesUpdated?.Invoke(processed);
+            CheckNotifications(processed, settings);
+            if (changed)
+                DevicesUpdated?.Invoke(processed);
             return processed;
         }
         finally
         {
             _refreshLock.Release();
         }
+    }
+
+    /// <summary>Equal lists ignoring <see cref="BluetoothDeviceBattery.LastUpdated"/>, which changes on every scan.</summary>
+    public static bool HasSameContent(IReadOnlyList<BluetoothDeviceBattery> a, IReadOnlyList<BluetoothDeviceBattery> b)
+    {
+        if (a.Count != b.Count)
+            return false;
+
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i] with { LastUpdated = default } != b[i] with { LastUpdated = default })
+                return false;
+        }
+        return true;
     }
 
     public static IReadOnlyList<BluetoothDeviceBattery> ApplySettings(
@@ -137,15 +189,26 @@ public sealed class BatteryMonitorService : IDisposable
             .ToList();
     }
 
+    /// <summary>
+    /// Display order across all providers: connected devices first, then by category and name,
+    /// so a device read over HID isn't stuck below disconnected Bluetooth devices.
+    /// </summary>
+    public static IReadOnlyList<BluetoothDeviceBattery> SortForDisplay(IEnumerable<BluetoothDeviceBattery> devices) =>
+        devices
+            .OrderByDescending(d => d.IsConnected)
+            .ThenBy(d => d.Category)
+            .ThenBy(d => d.EffectiveName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
     public IReadOnlyList<BluetoothDeviceBattery> GetTaskbarDevices()
     {
-        return _latestDevices
+        return Devices
             .Where(d => !d.IsHidden && (!Settings.ShowOnlyConnected || d.IsConnected))
             .Take(Settings.MaxTaskbarDevices)
             .ToList();
     }
 
-    private void CheckNotifications(IReadOnlyList<BluetoothDeviceBattery> devices)
+    private void CheckNotifications(IReadOnlyList<BluetoothDeviceBattery> devices, AppSettings settings)
     {
         foreach (var d in devices)
         {
@@ -158,7 +221,7 @@ public sealed class BatteryMonitorService : IDisposable
                 if (prevCharging != d.IsCharging)
                 {
                     _previousChargingState[d.Id] = d.IsCharging;
-                    if (Settings.EnableChargingStateNotification)
+                    if (settings.EnableChargingStateNotification)
                     {
                         var eventType = d.IsCharging ? NotificationEventType.ChargingStarted : NotificationEventType.ChargingStopped;
                         var msg = d.IsCharging
@@ -174,9 +237,9 @@ public sealed class BatteryMonitorService : IDisposable
             }
 
             // 2. Low Battery check
-            if (Settings.EnableLowBatteryNotification)
+            if (settings.EnableLowBatteryNotification)
             {
-                if (d.BatteryPercent <= Settings.LowBatteryThreshold && !d.IsCharging)
+                if (d.BatteryPercent <= settings.LowBatteryThreshold && !d.IsCharging)
                 {
                     if (_notifiedLowIds.Add(d.Id))
                     {
@@ -184,14 +247,14 @@ public sealed class BatteryMonitorService : IDisposable
                         NotificationTriggered?.Invoke(d, NotificationEventType.LowBattery, msg);
                     }
                 }
-                else if (d.BatteryPercent > Settings.LowBatteryThreshold + 5)
+                else if (d.BatteryPercent > settings.LowBatteryThreshold + 5)
                 {
                     _notifiedLowIds.Remove(d.Id);
                 }
             }
 
             // 3. Fully Charged check (100% or high while charging/completed)
-            if (Settings.EnableFullBatteryNotification)
+            if (settings.EnableFullBatteryNotification)
             {
                 if (d.BatteryPercent >= 100)
                 {
@@ -211,6 +274,7 @@ public sealed class BatteryMonitorService : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _timer?.Dispose();
         _refreshLock.Dispose();
         foreach (var provider in _liveProviders)

@@ -12,20 +12,20 @@ namespace BatteryHub.App;
 public partial class App : System.Windows.Application
 {
     private Mutex? _singleInstanceMutex;
-    private SettingsService? _settingsService;
-    private BatteryMonitorService? _monitorService;
-    private TaskbarOverlayWindow? _overlayWindow;
-    private TaskbarAnchorService? _anchorService;
-    private FlyoutWindow? _flyoutWindow;
-    private TrayIconService? _trayIconService;
+    private bool _ownsMutex;
+    private BatteryMonitorService _monitorService = null!;
+    private TaskbarOverlayWindow _overlayWindow = null!;
+    private TaskbarAnchorService _anchorService = null!;
+    private FlyoutWindow _flyoutWindow = null!;
+    private TrayIconService _trayIconService = null!;
     private System.Threading.Timer? _deviceChangeDebounce;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        _singleInstanceMutex = new Mutex(true, "BatteryHub_SingleInstance_Mutex", out bool isNewInstance);
-        if (!isNewInstance)
+        _singleInstanceMutex = new Mutex(true, "BatteryHub_SingleInstance_Mutex", out _ownsMutex);
+        if (!_ownsMutex)
         {
             Shutdown();
             return;
@@ -36,9 +36,9 @@ public partial class App : System.Windows.Application
             BatteryHub.Core.Services.Providers.AttackSharkHidBatteryProvider.EnableDiagnosticLog = true;
         }
 
-        _settingsService = new SettingsService();
-        _monitorService = new BatteryMonitorService(_settingsService);
+        RepairStartupEntry();
 
+        _monitorService = new BatteryMonitorService(new SettingsService());
         _overlayWindow = new TaskbarOverlayWindow();
         _anchorService = new TaskbarAnchorService(_overlayWindow);
         _flyoutWindow = new FlyoutWindow();
@@ -55,120 +55,115 @@ public partial class App : System.Windows.Application
         _monitorService.Start();
     }
 
+    /// <summary>
+    /// Each release lives in its own versioned folder, so a "Start with Windows" entry written by an older
+    /// version points at an old exe. Re-point it at the exe that is running now. Skipped in Debug builds
+    /// so `dotnet run` never hijacks the installed copy's startup entry.
+    /// </summary>
+    private static void RepairStartupEntry()
+    {
+#if !DEBUG
+        try
+        {
+            if (StartupService.IsEnabled())
+                StartupService.SetEnabled(true);
+        }
+        catch
+        {
+            // Registry not writable: keep the existing entry.
+        }
+#endif
+    }
+
     private void WireEvents()
     {
-        if (_monitorService is null || _overlayWindow is null || _anchorService is null ||
-            _flyoutWindow is null || _trayIconService is null)
-            return;
-
-        _monitorService.DevicesUpdated += devices => Dispatcher.Invoke(() => RenderAll(devices));
+        _monitorService.DevicesUpdated += _ => RunOnUi(RenderAll);
         _monitorService.NotificationTriggered += (_, type, message) =>
-            Dispatcher.Invoke(() => _trayIconService.ShowBalloon(GetNotificationTitle(type), message, GetNotificationIcon(type)));
+            RunOnUi(() => _trayIconService.ShowBalloon(GetNotificationTitle(type), message, GetNotificationIcon(type)));
 
         _overlayWindow.LayoutUpdatedOnce += () => _anchorService.Reposition(force: true);
         _overlayWindow.LeftClicked += ToggleFlyout;
         _overlayWindow.RightClicked += () => _trayIconService.ShowContextMenuAtCursor();
         _overlayWindow.DeviceChangeDetected += ScheduleDebouncedRefresh;
 
+        // Tray menu
         _trayIconService.OpenFlyoutRequested += ToggleFlyout;
-        _trayIconService.RefreshRequested += () => _ = _monitorService.RefreshAsync();
-        _trayIconService.ToggleOverlayRequested += enabled =>
-        {
-            _monitorService.UpdateSettings(s => s.ShowTaskbarOverlay = enabled, triggerRefresh: false);
-            _anchorService.SetEnabled(enabled);
-            RenderAll(_monitorService.Devices);
-        };
-        _trayIconService.ToggleColorCodeRequested += enabled =>
-            _monitorService.UpdateSettings(s => s.ColorCodeBatteryLevel = enabled);
-        _trayIconService.ToggleStartupRequested += enabled =>
-        {
-            StartupService.SetEnabled(enabled);
-            _monitorService.UpdateSettings(s => s.LaunchAtStartup = enabled, triggerRefresh: false);
-            RenderAll(_monitorService.Devices);
-        };
+        _trayIconService.RefreshRequested += RequestRefresh;
+        _trayIconService.ToggleOverlayRequested += SetOverlayEnabled;
+        _trayIconService.ToggleColorCodeRequested += enabled => Update(s => s.ColorCodeBatteryLevel = enabled);
+        _trayIconService.ToggleStartupRequested += SetStartupEnabled;
         _trayIconService.ExitRequested += Shutdown;
 
+        // Flyout
         _flyoutWindow.IsVisibleChanged += (_, _) =>
         {
             if (!_flyoutWindow.IsVisible)
                 _anchorService.Reposition(force: true);
         };
-        _flyoutWindow.RefreshRequested += () => _ = _monitorService.RefreshAsync();
-        _flyoutWindow.OverlayToggled += enabled =>
+        _flyoutWindow.RefreshRequested += RequestRefresh;
+        _flyoutWindow.OverlayToggled += SetOverlayEnabled;
+        _flyoutWindow.StartupToggled += SetStartupEnabled;
+        _flyoutWindow.LowAlertToggled += enabled => Update(s => s.EnableLowBatteryNotification = enabled);
+        _flyoutWindow.FullAlertToggled += enabled => Update(s => s.EnableFullBatteryNotification = enabled);
+        _flyoutWindow.ChargingAlertToggled += enabled => Update(s => s.EnableChargingStateNotification = enabled);
+        _flyoutWindow.ColorCodeToggled += enabled => Update(s => s.ColorCodeBatteryLevel = enabled);
+        _flyoutWindow.LowThresholdChanged += threshold => Update(s => s.LowBatteryThreshold = threshold);
+        _flyoutWindow.TaskbarLayoutChanged += layout => Update(s => s.TaskbarLayout = layout);
+        _flyoutWindow.ToggleVisibilityRequested += id => Update(s =>
         {
-            _monitorService.UpdateSettings(s => s.ShowTaskbarOverlay = enabled, triggerRefresh: false);
-            _anchorService.SetEnabled(enabled);
-            RenderAll(_monitorService.Devices);
-        };
-        _flyoutWindow.StartupToggled += enabled =>
-        {
-            StartupService.SetEnabled(enabled);
-            _monitorService.UpdateSettings(s => s.LaunchAtStartup = enabled, triggerRefresh: false);
-            RenderAll(_monitorService.Devices);
-        };
-        _flyoutWindow.LowAlertToggled += enabled =>
-            _monitorService.UpdateSettings(s => s.EnableLowBatteryNotification = enabled, triggerRefresh: false);
-        _flyoutWindow.FullAlertToggled += enabled =>
-            _monitorService.UpdateSettings(s => s.EnableFullBatteryNotification = enabled, triggerRefresh: false);
-        _flyoutWindow.ChargingAlertToggled += enabled =>
-            _monitorService.UpdateSettings(s => s.EnableChargingStateNotification = enabled, triggerRefresh: false);
-        _flyoutWindow.ColorCodeToggled += enabled =>
-            _monitorService.UpdateSettings(s => s.ColorCodeBatteryLevel = enabled);
-        _flyoutWindow.LowThresholdChanged += threshold =>
-            _monitorService.UpdateSettings(s => s.LowBatteryThreshold = threshold);
-        _flyoutWindow.TaskbarLayoutChanged += layout =>
-            _monitorService.UpdateSettings(s => s.TaskbarLayout = layout);
-
-        _flyoutWindow.ToggleVisibilityRequested += id =>
-        {
-            _monitorService.UpdateSettings(s =>
-            {
-                if (!s.HiddenDeviceIds.Remove(id))
-                    s.HiddenDeviceIds.Add(id);
-            });
-        };
-
+            if (!s.HiddenDeviceIds.Remove(id))
+                s.HiddenDeviceIds.Add(id);
+        });
         _flyoutWindow.CycleCategoryRequested += id =>
         {
             var current = _monitorService.Devices.FirstOrDefault(d => d.Id == id)?.Category ?? DeviceCategory.Other;
             var values = Enum.GetValues<DeviceCategory>();
-            int nextIndex = (Array.IndexOf(values, current) + 1) % values.Length;
-            var next = values[nextIndex];
-            _monitorService.UpdateSettings(s => s.CategoryOverrides[id] = next);
+            var next = values[(Array.IndexOf(values, current) + 1) % values.Length];
+            Update(s => s.CategoryOverrides[id] = next);
         };
+    }
+
+    /// <summary>Persists a settings change; the monitor re-applies it and raises DevicesUpdated → RenderAll.</summary>
+    private void Update(Action<AppSettings> mutate) => _monitorService.UpdateSettings(mutate);
+
+    private void RequestRefresh() => _ = _monitorService.RefreshAsync();
+
+    private void SetOverlayEnabled(bool enabled)
+    {
+        _anchorService.SetEnabled(enabled);
+        Update(s => s.ShowTaskbarOverlay = enabled);
+    }
+
+    private void SetStartupEnabled(bool enabled)
+    {
+        StartupService.SetEnabled(enabled);
+        Update(s => s.LaunchAtStartup = enabled);
+    }
+
+    private void RunOnUi(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+            action();
+        else
+            Dispatcher.BeginInvoke(action);
     }
 
     private void ScheduleDebouncedRefresh()
     {
         _deviceChangeDebounce?.Dispose();
-        _deviceChangeDebounce = new System.Threading.Timer(_ =>
-        {
-            if (_monitorService is not null)
-                _ = _monitorService.RefreshAsync();
-        }, null, 300, Timeout.Infinite);
+        _deviceChangeDebounce = new System.Threading.Timer(_ => RequestRefresh(), null, 300, Timeout.Infinite);
     }
 
-    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            if (_monitorService is not null)
-                RenderAll(_monitorService.Devices);
-        });
-    }
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) => RunOnUi(RenderAll);
 
-    private void RenderAll(IReadOnlyList<BluetoothDeviceBattery> allDevices)
+    /// <summary>Refreshes the taskbar overlay, tray tooltip and (only while it is open) the flyout.</summary>
+    private void RenderAll()
     {
-        if (_monitorService is null || _overlayWindow is null || _anchorService is null ||
-            _flyoutWindow is null || _trayIconService is null)
-            return;
-
         var settings = _monitorService.Settings;
+        var allDevices = _monitorService.Devices;
         bool isLightTaskbar = WindowsThemeHelper.IsTaskbarLightMode();
-        bool isLightApps = WindowsThemeHelper.IsAppsLightMode();
 
-        var taskbarModels = _monitorService.GetTaskbarDevices();
-        var taskbarItems = taskbarModels
+        var taskbarItems = _monitorService.GetTaskbarDevices()
             .Select(d => DeviceDisplayItem.FromModel(d, isLightTaskbar, settings))
             .ToList();
 
@@ -176,13 +171,20 @@ public partial class App : System.Windows.Application
         _anchorService.SetHasContent(taskbarItems.Count > 0);
         _anchorService.Reposition(force: true);
 
-        var allItems = allDevices
-            .Select(d => DeviceDisplayItem.FromModel(d, isLightApps, settings))
-            .ToList();
-
         bool startupEnabled = StartupService.IsEnabled();
-        _flyoutWindow.BindState(allItems, settings, startupEnabled, isLightApps);
         _trayIconService.UpdateMenuState(settings, startupEnabled, allDevices);
+
+        if (_flyoutWindow.IsVisible)
+            BindFlyout(startupEnabled);
+    }
+
+    private void BindFlyout(bool startupEnabled)
+    {
+        bool isLightApps = WindowsThemeHelper.IsAppsLightMode();
+        var items = _monitorService.Devices
+            .Select(d => DeviceDisplayItem.FromModel(d, isLightApps, _monitorService.Settings))
+            .ToList();
+        _flyoutWindow.BindState(items, _monitorService.Settings, startupEnabled, isLightApps);
     }
 
     private static string GetNotificationTitle(NotificationEventType type) => type switch
@@ -201,16 +203,13 @@ public partial class App : System.Windows.Application
 
     private void ToggleFlyout()
     {
-        if (_flyoutWindow is null || _monitorService is null)
-            return;
-
         if (_flyoutWindow.IsVisible)
         {
             _flyoutWindow.Hide();
             return;
         }
 
-        RenderAll(_monitorService.Devices);
+        BindFlyout(StartupService.IsEnabled());
         _flyoutWindow.Show();
         _flyoutWindow.PositionAboveWorkArea();
         _flyoutWindow.Activate();
@@ -223,7 +222,8 @@ public partial class App : System.Windows.Application
         _anchorService?.Dispose();
         _trayIconService?.Dispose();
         _monitorService?.Dispose();
-        _singleInstanceMutex?.ReleaseMutex();
+        if (_ownsMutex)
+            _singleInstanceMutex?.ReleaseMutex();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }

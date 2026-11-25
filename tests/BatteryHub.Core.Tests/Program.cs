@@ -144,7 +144,7 @@ try
     await monitor.RefreshAsync();
     Assert(events.Contains(NotificationEventType.ChargingStopped), "Unplugging should raise ChargingStopped");
 
-    monitor.UpdateSettings(x => x.EnableChargingStateNotification = false, triggerRefresh: false);
+    monitor.UpdateSettings(x => x.EnableChargingStateNotification = false);
     events.Clear();
     mockProvider.Devices[0] = rawDevices[0] with { BatteryPercent = 100, IsCharging = true };
     await monitor.RefreshAsync();
@@ -154,6 +154,51 @@ finally
 {
     if (File.Exists(tempSettings2)) File.Delete(tempSettings2);
 }
+
+// 4. Change detection: identical scans don't re-render; settings changes apply immediately
+string tempSettings3 = Path.Combine(Path.GetTempPath(), $"bh_test_{Guid.NewGuid():N}.json");
+try
+{
+    var provider3 = new StubProvider(rawDevices.Select(d => d with { }).ToList());
+    using var monitor3 = new BatteryMonitorService(new SettingsService(tempSettings3), liveProvider: provider3);
+    int updates = 0;
+    IReadOnlyList<BluetoothDeviceBattery>? lastPublished = null;
+    monitor3.DevicesUpdated += list => { updates++; lastPublished = list; };
+
+    await monitor3.RefreshAsync();
+    Assert(updates == 1, "First scan should publish");
+
+    provider3.Devices[0] = provider3.Devices[0] with { LastUpdated = DateTimeOffset.UtcNow.AddSeconds(5) };
+    await monitor3.RefreshAsync();
+    Assert(updates == 1, "Identical scan (only LastUpdated differs) should not publish");
+
+    provider3.Devices[0] = provider3.Devices[0] with { BatteryPercent = 14 };
+    await monitor3.RefreshAsync();
+    Assert(updates == 2, "Battery change should publish");
+
+    monitor3.UpdateSettings(x => x.HiddenDeviceIds.Add("d1"));
+    Assert(updates == 3 && lastPublished!.First(d => d.Id == "d1").IsHidden, "Settings change should re-apply and publish without a new scan");
+    Assert(!monitor3.GetTaskbarDevices().Any(d => d.Id == "d1"), "Hidden device should leave the taskbar immediately");
+}
+finally
+{
+    if (File.Exists(tempSettings3)) File.Delete(tempSettings3);
+}
+
+// 5. Settings snapshot is a deep copy
+var original = new AppSettings { HiddenDeviceIds = { "a" } };
+var snapshot = original.Clone();
+original.HiddenDeviceIds.Add("b");
+Assert(!snapshot.HiddenDeviceIds.Contains("b") && snapshot.HiddenDeviceIds.Contains("A"), "Clone should deep-copy collections and keep case-insensitive comparers");
+
+// 6. Display order: connected first regardless of provider order
+var sorted = BatteryMonitorService.SortForDisplay(new[]
+{
+    new BluetoothDeviceBattery { Id = "bt-off", Name = "AirPods", Category = DeviceCategory.Headphones, IsConnected = false },
+    new BluetoothDeviceBattery { Id = "hid-on", Name = "Attack Shark X11", Category = DeviceCategory.Mouse, IsConnected = true },
+    new BluetoothDeviceBattery { Id = "bt-on", Name = "WH-CH520", Category = DeviceCategory.Headphones, IsConnected = true },
+});
+Assert(sorted.Select(d => d.Id).SequenceEqual(new[] { "bt-on", "hid-on", "bt-off" }), "Connected devices should come first, then category/name");
 
 Console.WriteLine($"BatteryHub.Core.Tests: {passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;

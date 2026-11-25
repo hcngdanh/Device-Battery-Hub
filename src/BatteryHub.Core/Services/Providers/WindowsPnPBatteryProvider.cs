@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.RegularExpressions;
 using BatteryHub.Core.Models;
 using BatteryHub.Core.Services.Win32;
@@ -233,13 +232,13 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
             while (!ct.IsCancellationRequested &&
                    NativeMethods.SetupDiEnumDeviceInfo(devInfoSet, index++, ref devInfoData))
             {
-                Guid? containerId = GetGuidProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_ContainerId);
+                Guid? containerId = SetupApi.GetGuidProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_ContainerId);
                 if (containerId is null || containerId.Value == Guid.Empty)
                     continue;
 
-                string instanceId = GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_InstanceId) ?? string.Empty;
-                string? pnpClass = GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_Class);
-                byte? battery = GetByteProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Bluetooth_Battery);
+                string instanceId = SetupApi.GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_InstanceId) ?? string.Empty;
+                string? pnpClass = SetupApi.GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_Class);
+                byte? battery = SetupApi.GetByteProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Bluetooth_Battery);
 
                 bool isBluetoothNode =
                     instanceId.StartsWith("BTH", StringComparison.OrdinalIgnoreCase) ||
@@ -247,9 +246,8 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
 
                 if (!isBluetoothNode && battery is null && !containers.ContainsKey(containerId.Value))
                 {
-                    // Skip unrelated PCI/USB containers unless already created or carrying BT battery.
-                    // Wait: some HID/Audio child nodes appear before BTH node in enumeration order,
-                    // so only skip if not BTH/HID/Audio/MEDIA.
+                    // Skip unrelated PCI/USB containers. HID/Audio child nodes can be enumerated before
+                    // their BTH parent, so those classes are kept to avoid losing the container.
                     if (!string.Equals(pnpClass, "HIDClass", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(pnpClass, "Mouse", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(pnpClass, "Keyboard", StringComparison.OrdinalIgnoreCase) &&
@@ -269,8 +267,8 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
                 if (isBluetoothNode)
                     agg.IsBluetoothContainer = true;
 
-                string? friendlyName = GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_FriendlyName)
-                                       ?? GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_DeviceDesc);
+                string? friendlyName = SetupApi.GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_FriendlyName)
+                                       ?? SetupApi.GetStringProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_DeviceDesc);
 
                 agg.Nodes.Add((friendlyName, pnpClass, instanceId));
 
@@ -279,7 +277,7 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
 
                 if (agg.ClassOfDevice is null)
                 {
-                    uint? cod = GetUInt32Property(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Bluetooth_ClassOfDevice);
+                    uint? cod = SetupApi.GetUInt32Property(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Bluetooth_ClassOfDevice);
                     if (cod is not null && cod.Value != 0)
                         agg.ClassOfDevice = cod.Value;
                 }
@@ -293,7 +291,7 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
 
                 if (isBluetoothNode)
                 {
-                    bool? isConnected = GetBoolProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_IsConnected);
+                    bool? isConnected = SetupApi.GetBoolProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_IsConnected);
                     if (isConnected is bool c)
                     {
                         agg.ExplicitConnected = agg.ExplicitConnected is true || c;
@@ -318,86 +316,21 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
     private static Dictionary<Guid, int> ScanBleGattBatteries(CancellationToken ct)
     {
         var result = new Dictionary<Guid, int>();
-        Guid bleGuid = NativeMethods.GUID_BLUETOOTHLE_DEVICE_INTERFACE;
-
-        IntPtr devInfoSet = NativeMethods.SetupDiGetClassDevs(
-            ref bleGuid,
-            null,
-            IntPtr.Zero,
-            NativeMethods.DIGCF_DEVICEINTERFACE | NativeMethods.DIGCF_PRESENT);
-
-        if (devInfoSet == NativeMethods.INVALID_HANDLE_VALUE)
-            return result;
-
         try
         {
-            var ifaceData = new NativeMethods.SP_DEVICE_INTERFACE_DATA
+            foreach (var iface in SetupApi.EnumerateInterfaces(NativeMethods.GUID_BLUETOOTHLE_DEVICE_INTERFACE, ct))
             {
-                cbSize = (uint)Marshal.SizeOf<NativeMethods.SP_DEVICE_INTERFACE_DATA>()
-            };
-
-            uint index = 0;
-            while (!ct.IsCancellationRequested &&
-                   NativeMethods.SetupDiEnumDeviceInterfaces(devInfoSet, IntPtr.Zero, ref bleGuid, index++, ref ifaceData))
-            {
-                var devInfoData = new NativeMethods.SP_DEVINFO_DATA
-                {
-                    cbSize = (uint)Marshal.SizeOf<NativeMethods.SP_DEVINFO_DATA>()
-                };
-
-                NativeMethods.SetupDiGetDeviceInterfaceDetail(
-                    devInfoSet,
-                    ref ifaceData,
-                    IntPtr.Zero,
-                    0,
-                    out uint requiredSize,
-                    ref devInfoData);
-
-                if (requiredSize == 0)
+                if (ct.IsCancellationRequested)
+                    break;
+                if (iface.ContainerId is not Guid containerId || containerId == Guid.Empty)
                     continue;
-
-                IntPtr detailBuffer = Marshal.AllocHGlobal((int)requiredSize);
-                try
-                {
-                    int cbSize = IntPtr.Size == 8 ? 8 : 6;
-                    Marshal.WriteInt32(detailBuffer, cbSize);
-
-                    if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(
-                            devInfoSet,
-                            ref ifaceData,
-                            detailBuffer,
-                            requiredSize,
-                            out _,
-                            ref devInfoData))
-                    {
-                        continue;
-                    }
-
-                    string? devicePath = Marshal.PtrToStringUni(IntPtr.Add(detailBuffer, 4));
-                    if (string.IsNullOrWhiteSpace(devicePath))
-                        continue;
-
-                    Guid? containerId = GetGuidProperty(devInfoSet, ref devInfoData, NativeMethods.DEVPKEY_Device_ContainerId);
-                    if (containerId is null || containerId.Value == Guid.Empty)
-                        continue;
-
-                    int? level = ReadBleBatteryFromPath(devicePath);
-                    if (level is int val)
-                        result[containerId.Value] = val;
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(detailBuffer);
-                }
+                if (ReadBleBatteryFromPath(iface.DevicePath) is int level)
+                    result[containerId] = level;
             }
         }
         catch
         {
-            // Ignore GATT enumeration failures on systems without BLE radio.
-        }
-        finally
-        {
-            NativeMethods.SetupDiDestroyDeviceInfoList(devInfoSet);
+            // Ignore GATT enumeration failures on systems without a BLE radio.
         }
 
         return result;
@@ -496,58 +429,5 @@ public sealed partial class WindowsPnPBatteryProvider : IBatteryProvider
         byte[] bytes = uuid.LongUuid.ToByteArray();
         ushort extracted = (ushort)(bytes[0] | (bytes[1] << 8));
         return extracted == shortUuid;
-    }
-
-    private static byte[]? GetRawProperty(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData, NativeMethods.DEVPROPKEY key, out uint propType)
-    {
-        NativeMethods.SetupDiGetDeviceProperty(devInfoSet, ref devInfoData, ref key, out propType, null, 0, out uint reqSize, 0);
-        if (reqSize == 0)
-            return null;
-
-        byte[] buffer = new byte[reqSize];
-        if (!NativeMethods.SetupDiGetDeviceProperty(devInfoSet, ref devInfoData, ref key, out propType, buffer, reqSize, out _, 0))
-            return null;
-
-        return buffer;
-    }
-
-    private static string? GetStringProperty(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData, NativeMethods.DEVPROPKEY key)
-    {
-        var buf = GetRawProperty(devInfoSet, ref devInfoData, key, out uint propType);
-        if (buf is null || propType != NativeMethods.DEVPROP_TYPE_STRING)
-            return null;
-        return Encoding.Unicode.GetString(buf).TrimEnd('\0');
-    }
-
-    private static byte? GetByteProperty(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData, NativeMethods.DEVPROPKEY key)
-    {
-        var buf = GetRawProperty(devInfoSet, ref devInfoData, key, out uint propType);
-        if (buf is null || buf.Length < 1 || propType != NativeMethods.DEVPROP_TYPE_BYTE)
-            return null;
-        return buf[0];
-    }
-
-    private static uint? GetUInt32Property(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData, NativeMethods.DEVPROPKEY key)
-    {
-        var buf = GetRawProperty(devInfoSet, ref devInfoData, key, out uint propType);
-        if (buf is null || buf.Length < 4 || propType != NativeMethods.DEVPROP_TYPE_UINT32)
-            return null;
-        return BitConverter.ToUInt32(buf, 0);
-    }
-
-    private static bool? GetBoolProperty(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData, NativeMethods.DEVPROPKEY key)
-    {
-        var buf = GetRawProperty(devInfoSet, ref devInfoData, key, out uint propType);
-        if (buf is null || buf.Length < 1 || propType != NativeMethods.DEVPROP_TYPE_BOOLEAN)
-            return null;
-        return buf[0] != 0;
-    }
-
-    private static Guid? GetGuidProperty(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData, NativeMethods.DEVPROPKEY key)
-    {
-        var buf = GetRawProperty(devInfoSet, ref devInfoData, key, out uint propType);
-        if (buf is null || buf.Length < 16 || propType != NativeMethods.DEVPROP_TYPE_GUID)
-            return null;
-        return new Guid(buf.AsSpan(0, 16));
     }
 }
