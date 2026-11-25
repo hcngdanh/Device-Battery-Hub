@@ -36,8 +36,50 @@ public sealed class NotificationEngine
     private readonly HashSet<string> _notifiedFull = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTimeOffset> _lastCritical = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _previousCharging = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// How long an inferred disconnect must last before it is announced. Shorter silences are a
+    /// sleeping device (mouse left idle), not one that was switched off.
+    /// </summary>
+    public static readonly TimeSpan InferredDisconnectGrace = TimeSpan.FromMinutes(5);
+
+    /// <summary>Last connection state the user was told about (or first seen).</summary>
     private readonly Dictionary<string, bool> _previousConnected = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>When an inferred device went silent and the disconnect hasn't been announced yet.</summary>
+    private readonly Dictionary<string, DateTimeOffset> _silentSince = new(StringComparer.OrdinalIgnoreCase);
     private DateOnly? _lastReminderDate;
+
+    private void EvaluateConnection(BluetoothDeviceBattery d, AppSettings settings, DateTimeOffset now, List<BatteryNotification> result)
+    {
+        // The first sighting only records state, so startup isn't noisy.
+        if (!_previousConnected.TryGetValue(d.Id, out bool announced))
+        {
+            _previousConnected[d.Id] = d.IsConnected;
+            return;
+        }
+
+        if (d.IsConnected == announced)
+        {
+            // Woke up before the grace period ran out: nothing was announced, so nothing to undo.
+            _silentSince.Remove(d.Id);
+            return;
+        }
+
+        if (d.ConnectionInferred && !d.IsConnected)
+        {
+            if (!_silentSince.TryGetValue(d.Id, out var since))
+            {
+                _silentSince[d.Id] = now;
+                return;
+            }
+            if (now - since < InferredDisconnectGrace)
+                return;
+        }
+
+        _silentSince.Remove(d.Id);
+        _previousConnected[d.Id] = d.IsConnected;
+        if (settings.EnableConnectionNotification)
+            result.Add(Single(d.IsConnected ? NotificationEventType.DeviceConnected : NotificationEventType.DeviceDisconnected, d));
+    }
 
     public IReadOnlyList<BatteryNotification> Evaluate(
         IReadOnlyList<BluetoothDeviceBattery> devices,
@@ -51,13 +93,7 @@ public sealed class NotificationEngine
             if (d.IsHidden)
                 continue;
 
-            // Connection changes. The first sighting only records state, so startup isn't noisy.
-            if (_previousConnected.TryGetValue(d.Id, out bool wasConnected) && wasConnected != d.IsConnected)
-            {
-                if (settings.EnableConnectionNotification)
-                    result.Add(Single(d.IsConnected ? NotificationEventType.DeviceConnected : NotificationEventType.DeviceDisconnected, d));
-            }
-            _previousConnected[d.Id] = d.IsConnected;
+            EvaluateConnection(d, settings, nowLocal, result);
 
             if (!d.IsConnected)
                 continue;

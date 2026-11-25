@@ -32,14 +32,26 @@ public sealed class DeviceDisplayItem
     // Taskbar layout (device icon is always shown)
     public Visibility PercentageVisibility { get; init; } = Visibility.Visible;
     public Visibility BatteryIconVisibility { get; init; } = Visibility.Collapsed;
+    /// <summary>Larger battery glyph with the number drawn inside the fill.</summary>
+    public Visibility LabeledBatteryVisibility { get; init; } = Visibility.Collapsed;
     public Visibility ChargingVisibility => IsCharging ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>Bolt after the glyph/text: used when the small glyph (which carries its own bolt) isn't shown.</summary>
     public Visibility InlineChargingVisibility =>
         IsCharging && BatteryIconVisibility != Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
 
     // Battery glyph
-    public double BatteryFillWidth => BatteryPercent <= 0
+    public double BatteryFillWidth => FillWidth(BatteryFillMaxWidth);
+
+    /// <summary>Inner width (DIP) of the labeled battery glyph's fill area.</summary>
+    public const int LabeledFillMaxWidth = 24;
+    public double LabeledFillWidth => FillWidth(LabeledFillMaxWidth);
+    public string LevelText => BatteryPercent.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>Text color for the part of the number that sits on the fill (contrasts with the fill color).</summary>
+    public System.Windows.Media.Brush FillTextBrush { get; init; } = System.Windows.Media.Brushes.Black;
+
+    private double FillWidth(int max) => BatteryPercent <= 0
         ? 0
-        : Math.Max(1, Math.Round(Math.Min(BatteryPercent, 100) / 100.0 * BatteryFillMaxWidth));
+        : Math.Max(1, Math.Round(Math.Min(BatteryPercent, 100) / 100.0 * max));
     /// <summary>Green while charging, otherwise the level color.</summary>
     public System.Windows.Media.Brush BatteryFillBrush { get; init; } = System.Windows.Media.Brushes.White;
     public System.Windows.Media.Brush BoltBrush { get; init; } = System.Windows.Media.Brushes.White;
@@ -52,7 +64,13 @@ public sealed class DeviceDisplayItem
     public string VisibilityGlyph => IsHidden ? "" : ""; // Segoe Fluent Icons: View / Hide
     public double OpacityValue => IsConnected ? 1.0 : 0.55;
 
-    private string StateLabel => Loc.T(IsCharging ? "StatusCharging" : IsConnected ? "StatusConnected" : "StatusDisconnected");
+    public bool ConnectionInferred { get; init; }
+
+    private string StateLabel => Loc.T(
+        IsCharging ? "StatusCharging"
+        : IsConnected ? "StatusConnected"
+        : ConnectionInferred ? "StatusAsleep" // silent 2.4GHz device: asleep or switched off
+        : "StatusDisconnected");
 
     private string SourceLabel => Source switch
     {
@@ -105,6 +123,7 @@ public sealed class DeviceDisplayItem
             IsCharging = model.IsCharging,
             IsHidden = model.IsHidden,
             Source = model.Source,
+            ConnectionInferred = model.ConnectionInferred,
             IconGeometry = DeviceIconPaths.GetGeometry(model.Category),
             ForegroundBrush = Frozen(normalColor),
             AccentBrush = Frozen(levelColor),
@@ -112,9 +131,18 @@ public sealed class DeviceDisplayItem
             BatteryFillBrush = Frozen(fillColor),
             BoltBrush = Frozen(Colors.White),
             BoltStrokeBrush = Frozen(boltStroke),
-            BatteryIconVisibility = layout != TaskbarLayout.Percentage ? Visibility.Visible : Visibility.Collapsed,
-            PercentageVisibility = layout != TaskbarLayout.Battery ? Visibility.Visible : Visibility.Collapsed
+            FillTextBrush = Frozen(ContrastText(fillColor)),
+            BatteryIconVisibility = layout == TaskbarLayout.Battery ? Visibility.Visible : Visibility.Collapsed,
+            LabeledBatteryVisibility = layout == TaskbarLayout.BatteryAndPercentage ? Visibility.Visible : Visibility.Collapsed,
+            PercentageVisibility = layout == TaskbarLayout.Percentage ? Visibility.Visible : Visibility.Collapsed
         };
+    }
+
+    /// <summary>Near-black on light fills, white on dark fills (relative luminance threshold).</summary>
+    private static System.Windows.Media.Color ContrastText(System.Windows.Media.Color fill)
+    {
+        double luminance = (0.2126 * fill.R + 0.7152 * fill.G + 0.0722 * fill.B) / 255.0;
+        return luminance > 0.45 ? System.Windows.Media.Color.FromRgb(20, 20, 20) : Colors.White;
     }
 
     /// <summary>High above <c>LevelHighThreshold</c>, low below <c>LevelLowThreshold</c>, mid in between.</summary>

@@ -52,6 +52,49 @@
                 </Viewbox>
             </Grid>
 
+            <!-- Labeled battery: 28x14 body (1px outline, 1px gap, 24x10 fill) + 2x6 terminal, number centred inside.
+                 The number is drawn twice: taskbar color over the empty part, and a contrasting color
+                 clipped to the fill width, so it stays readable wherever the fill edge falls. -->
+            <StackPanel Orientation="Horizontal"
+                        Margin="5,0,0,0"
+                        VerticalAlignment="Center"
+                        Visibility="{Binding LabeledBatteryVisibility}">
+                <Border Width="28" Height="14"
+                        BorderThickness="1"
+                        CornerRadius="3.5"
+                        Padding="1"
+                        BorderBrush="{Binding ChargingBrush}">
+                    <Grid Width="24" Height="10">
+                        <Border HorizontalAlignment="Left"
+                                Width="{Binding LabeledFillWidth}"
+                                CornerRadius="2"
+                                Background="{Binding BatteryFillBrush}"/>
+                        <TextBlock Text="{Binding LevelText}"
+                                   Foreground="{Binding ChargingBrush}"
+                                   FontFamily="Segoe UI Variable Text, Segoe UI"
+                                   FontSize="9.5" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Margin="0,-3,0,-2"/>
+                        <Canvas HorizontalAlignment="Left"
+                                Width="{Binding LabeledFillWidth}"
+                                ClipToBounds="True">
+                            <Grid Width="24" Height="10">
+                                <TextBlock Text="{Binding LevelText}"
+                                           Foreground="{Binding FillTextBrush}"
+                                           FontFamily="Segoe UI Variable Text, Segoe UI"
+                                           FontSize="9.5" FontWeight="Bold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="0,-3,0,-2"/>
+                            </Grid>
+                        </Canvas>
+                    </Grid>
+                </Border>
+                <Border Width="2" Height="6"
+                        VerticalAlignment="Center"
+                        CornerRadius="0,1,1,0"
+                        Background="{Binding ChargingBrush}"/>
+            </StackPanel>
+
             <TextBlock Text="{Binding PercentText}"
                        Visibility="{Binding PercentageVisibility}"
                        Foreground="{Binding ForegroundBrush}"

@@ -277,6 +277,7 @@ public sealed class AttackSharkHidBatteryProvider : IPushBatteryProvider, IDispo
                 IsConnected = true,
                 IsCharging = isCharging,
                 Source = BatterySource.UsbHid,
+                ConnectionInferred = !isWired,
                 LastUpdated = DateTimeOffset.UtcNow
             };
         }

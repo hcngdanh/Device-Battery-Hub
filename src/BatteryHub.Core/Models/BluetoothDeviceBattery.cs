@@ -28,6 +28,12 @@ public sealed record BluetoothDeviceBattery
     public bool IsCharging { get; init; }
     public bool IsHidden { get; init; }
     public BatterySource Source { get; init; }
+    /// <summary>
+    /// True when "disconnected" is only inferred from the device going silent (e.g. a 2.4GHz mouse whose
+    /// receiver stays plugged in). Such a device also goes silent when it merely sleeps, so connection
+    /// notifications for it are debounced.
+    /// </summary>
+    public bool ConnectionInferred { get; init; }
     public DateTimeOffset LastUpdated { get; init; } = DateTimeOffset.UtcNow;
 
     public string EffectiveName => string.IsNullOrWhiteSpace(DisplayName) ? Name : DisplayName;

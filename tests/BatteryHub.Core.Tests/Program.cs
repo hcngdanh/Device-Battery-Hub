@@ -200,6 +200,29 @@ var sorted = BatteryMonitorService.SortForDisplay(new[]
 });
 Assert(sorted.Select(d => d.Id).SequenceEqual(new[] { "bt-on", "hid-on", "bt-off" }), "Connected devices should come first, then category/name");
 
+// 6b. Inferred disconnects (sleeping 2.4GHz mouse) are debounced
+{
+    var engine = new NotificationEngine();
+    var cfg = new AppSettings { EnableConnectionNotification = true };
+    var t0 = new DateTimeOffset(2026, 11, 25, 10, 0, 0, TimeSpan.FromHours(7));
+    var mouse = new BluetoothDeviceBattery { Id = "shark", Name = "Mouse", BatteryPercent = 70, IsConnected = true, ConnectionInferred = true };
+    var asleep = mouse with { IsConnected = false };
+    bool AnyConn(IEnumerable<BatteryNotification> r) =>
+        r.Any(n => n.Type is NotificationEventType.DeviceConnected or NotificationEventType.DeviceDisconnected);
+
+    engine.Evaluate([mouse], cfg, t0);
+    Assert(!AnyConn(engine.Evaluate([asleep], cfg, t0.AddSeconds(5))), "Short silence is not announced");
+    Assert(!AnyConn(engine.Evaluate([asleep], cfg, t0.AddMinutes(4))), "Still within grace period");
+    Assert(!AnyConn(engine.Evaluate([mouse], cfg, t0.AddMinutes(4.5))), "Waking up after an unannounced sleep is silent");
+
+    engine.Evaluate([asleep], cfg, t0.AddMinutes(10));
+    Assert(engine.Evaluate([asleep], cfg, t0.AddMinutes(15.1)).Any(n => n.Type == NotificationEventType.DeviceDisconnected),
+        "Silence longer than the grace period is announced once");
+    Assert(!AnyConn(engine.Evaluate([asleep], cfg, t0.AddMinutes(20))), "Disconnect is not repeated");
+    Assert(engine.Evaluate([mouse], cfg, t0.AddMinutes(21)).Any(n => n.Type == NotificationEventType.DeviceConnected),
+        "Reconnect after an announced disconnect is announced immediately");
+}
+
 // 7. NotificationEngine: critical repeat, full threshold, connection, reminder
 {
     var engine = new NotificationEngine();

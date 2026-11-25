@@ -7,6 +7,7 @@ public enum TaskbarLayout
 {
     Percentage = 0,
     Battery = 1,
+    /// <summary>Larger battery glyph with the number inside (name kept for saved settings).</summary>
     BatteryAndPercentage = 2
 }
 
